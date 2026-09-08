@@ -62,13 +62,15 @@ def pr_url_for(session: dict[str, Any]) -> str | None:
     out = structured(session)
     if isinstance(out.get("pr_url"), str) and out["pr_url"]:
         return out["pr_url"]
-    pr = session.get("pull_request")
-    if isinstance(pr, dict):
-        return pr.get("url") or pr.get("pr_url")
-    if isinstance(pr, list) and pr:
-        first = pr[0]
-        if isinstance(first, dict):
-            return first.get("url") or first.get("pr_url")
+    # The API's own view of the session's PRs, which beats the prompt-requested
+    # field when a session opened one but never reported it.
+    for pr in session.get("pull_requests") or []:
+        if isinstance(pr, str) and pr:
+            return pr
+        if isinstance(pr, dict):
+            url = pr.get("url") or pr.get("pr_url")
+            if url:
+                return str(url)
     return None
 
 
@@ -84,6 +86,9 @@ def task_update_from_session(session: dict[str, Any]) -> dict[str, Any]:
         "validate_registry": out.get("validate_command_from_registry"),
         "outcome": out.get("outcome"),
         "pr_url": pr_url_for(session),
+        # Measured, not configured: the run-cost half of the payback figure is
+        # whatever the sessions actually burned.
+        "acus": session.get("acus_consumed"),
     }
     if "validation_passed" in out:
         update["validation_passed"] = 1 if out.get("validation_passed") else 0

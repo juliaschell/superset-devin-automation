@@ -25,9 +25,9 @@ def test_scan_is_scheduled_and_manually_runnable():
     spec = render("scan", REPO, 8)
     triggers = spec["triggers"]
     assert any(t["event_type"] == "schedule:recurring" for t in triggers)
-    # Manual runs use the native run endpoint, so there is deliberately no
-    # second trigger for them.
-    assert len(triggers) == 1
+    # There is no run-now endpoint (POST .../run is a 404), so the manual entry
+    # point is an inbound webhook trigger. Losing it loses the manual path.
+    assert any(t["event_type"] == "webhook:incoming" for t in triggers)
 
 
 def test_remediator_has_both_entry_points():
@@ -79,9 +79,11 @@ def test_prompts_forbid_merging():
         assert "never merge" in text or "do not merge" in text
 
 
-def test_structured_output_schema_is_attached_and_restated():
+def test_structured_output_schema_is_stated_in_the_prompt():
+    """The API rejects a schema on the spawned session, so the shape is requested
+    in the prompt instead. That makes it advisory, which is why the reconciler
+    treats every structured field as optional."""
     spec = render("remediate", REPO, 8)
     action = next(a for a in spec["actions"] if a["type"] == "start_session")
-    schema = action["session"]["structured_output_schema"]
-    assert "outcome" in schema["properties"]
+    assert "structured_output_schema" not in action["session"]
     assert "outcome" in action["prompt"]

@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     validate_registry   TEXT,
     validation_passed   INTEGER,
     outcome             TEXT,
+    acus                REAL,
     failure_reason      TEXT,
     human_messages      INTEGER NOT NULL DEFAULT 0,
     rejected            INTEGER NOT NULL DEFAULT 0,
@@ -89,7 +90,16 @@ class Store:
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
         self.conn.executescript(SCHEMA)
+        self._add_missing_columns()
         self.conn.commit()
+
+    def _add_missing_columns(self) -> None:
+        """``CREATE TABLE IF NOT EXISTS`` leaves an older file on its old shape,
+        so new columns are added here rather than by rebuilding the database."""
+        have = {row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)")}
+        for name, decl in (("acus", "REAL"),):
+            if name not in have:
+                self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 
     # ---------------------------------------------------------------- events
 

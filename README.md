@@ -49,12 +49,12 @@ interesting part of this design, so it is explicit:
 | Concern | Owner | Why |
 |---|---|---|
 | Nightly schedule | Devin Automation (`schedule:recurring`) | native trigger |
-| Manual scan run | Devin Automation `run` | native "run now"; not a feature of ours |
+| Manual scan run | Devin Automation `webhook:incoming` trigger | there is no run-now endpoint, so the manual entry point is a second trigger rather than a button of ours |
 | GitHub event matching | Devin Automation triggers | `github:issues` + `github:pull_request_review`, with a conditions DSL |
 | Session dispatch | Devin Automation `start_session` | no webhook receiver, no HMAC, no dispatch loop |
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
 | Budget, concurrency, egress | Devin `limits` / `concurrency` / `net_policy` | native guardrails |
-| Result shape | Devin structured output schema | enforced by the platform |
+| Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the reconciler, and a missing one is recorded, not assumed |
 | Correlating attempts to an issue | **ours** | |
 | Longitudinal outcomes, cost, funnel | **ours** | Automations record *invocations*; the question here is *outcomes* |
 | Cleanup of rejected work | **ours** | |
@@ -120,9 +120,9 @@ Nothing offline is synthetic; see [`demo/README.md`](demo/README.md).
 
 ```bash
 cp .env.example .env    # fill in DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN
-make validate           # dry-run the automation payloads; creates nothing
+make validate           # check both payloads against the platform's trigger catalogue
 make apply              # create/update both automations from automations/*.json
-make scan               # fire the scan now instead of waiting for 02:00
+SCAN_WEBHOOK_SECRET=... make scan   # fire the scan now instead of waiting for 02:00
 MODE=live make run      # dashboard + reconcile loop
 ```
 
@@ -136,6 +136,8 @@ Prerequisites, all one-time:
 - Devin's GitHub connection scoped to **All installed repos** — GitHub triggers
   only fire on private repos by default, and the fork is public.
 - **Issues enabled** on the fork (GitHub disables them on forks).
+- The scan automation's **webhook secret**, for manual runs. The API returns it
+  as `null`, so it is copied once from the automation's page.
 
 ### Endpoints
 
@@ -166,11 +168,11 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
-- **ACUs** are read from the org usage page and reported as configured values;
-  per-session ACUs are not exposed by the API for this org, so this is stated
-  rather than silently computed. Build spend (planning + implementation
-  sessions) is reported next to run spend, because the payback question is about
-  both.
+- **Run ACUs are measured, build ACUs are declared.** The v3 session object
+  reports `acus_consumed`, so run spend is summed from the sessions that did the
+  work. Build spend — the planning and implementation sessions that produced
+  this system — carries no such tag, so it is a configured figure and the
+  dashboard labels which is which. The payback question is about both.
 
 No outcome is fabricated in either direction — no engineered failures, no
 flattering denominators. Sample size is printed above every rate in the report.

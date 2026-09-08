@@ -1,6 +1,6 @@
 {
+  "_doc": "Surveys the fork against the classification registry, files a labelled issue per actionable finding, and proposes new classifications as a PR. Detection is a judgement call, so it is a Devin session rather than a static scanner. Keys prefixed with _ are stripped before POST.",
   "name": "Superset — nightly scan",
-  "description": "Surveys the fork against the classification registry, files a labelled issue per actionable finding, and proposes new classifications as a PR. Detection is a judgement call, so it is a Devin session rather than a static scanner.",
   "enabled": true,
   "run_as": {"type": "organization"},
   "triggers": [
@@ -19,6 +19,10 @@
           }
         ]
       }
+    },
+    {
+      "_doc": "The manual entry point. There is no run-now REST call, so an inbound webhook trigger is how a human fires a scan off-schedule; the platform issues the URL when the trigger is created.",
+      "event_type": "webhook:incoming"
     }
   ],
   "actions": [
@@ -48,6 +52,5 @@
       ]
     }
   },
-  "notifications": {"email": {"when": "dispatch_failed"}},
   "metadata": {"project": "superset-remediation", "role": "scanner"}
 }

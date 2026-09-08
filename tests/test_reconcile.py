@@ -203,3 +203,17 @@ def test_nothing_in_the_client_can_merge():
     source = Path("src/github.py").read_text()
     assert "/merge" not in source
     assert "merge_method" not in source
+
+
+def test_pr_url_falls_back_to_the_api_view_of_the_session():
+    """A session that opens a PR but never reports it in structured output is
+    still observable: the v3 session object lists its pull requests."""
+    bare = session(11)
+    bare["structured_output"] = {"issue_number": 11}
+    bare["pull_requests"] = [{"url": "https://github.com/o/r/pull/4"}]
+    assert task_update_from_session(bare)["pr_url"] == "https://github.com/o/r/pull/4"
+    assert stage_for_session(bare) == "pr_open"
+
+
+def test_run_cost_is_read_from_the_session():
+    assert task_update_from_session(session(12, acus_consumed=3.5))["acus"] == 3.5

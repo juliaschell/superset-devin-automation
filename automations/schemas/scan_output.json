@@ -1,0 +1,54 @@
+{
+  "type": "object",
+  "required": ["run", "issues_filed", "classes_proposed", "skipped"],
+  "properties": {
+    "run": {
+      "type": "object",
+      "required": ["classes_read", "registry_empty"],
+      "properties": {
+        "classes_read": {"type": "array", "items": {"type": "string"}},
+        "registry_empty": {"type": "boolean"}
+      }
+    },
+    "issues_filed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["issue_number", "classification", "severity", "validate_command"],
+        "properties": {
+          "issue_number": {"type": "integer"},
+          "classification": {"type": "string"},
+          "severity": {"type": "string", "enum": ["low", "medium", "high", "critical"]},
+          "validate_command": {"type": "string"},
+          "title": {"type": "string"}
+        }
+      }
+    },
+    "classes_proposed": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["slug", "validate_command"],
+        "properties": {
+          "slug": {"type": "string"},
+          "validate_command": {"type": "string"},
+          "pr_url": {"type": "string"}
+        }
+      }
+    },
+    "skipped": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["what", "reason"],
+        "properties": {
+          "what": {"type": "string"},
+          "reason": {
+            "type": "string",
+            "enum": ["max_open", "duplicate", "not_actionable", "contradicts_repo_standards", "run_issue_cap"]
+          }
+        }
+      }
+    }
+  }
+}

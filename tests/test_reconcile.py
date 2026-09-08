@@ -1,0 +1,205 @@
+from __future__ import annotations
+
+from typing import Any
+
+from src.reconcile import (
+    Reconciler,
+    failure_reason,
+    issue_number_for,
+    stage_for_session,
+    task_update_from_session,
+)
+from src.store import Store
+
+
+class FakeConfig:
+    ready_label = "devin:ready"
+    rejected_label = "devin:rejected"
+    session_tag = "superset-remediation"
+    session_timeout_seconds = 3600
+
+
+class FakeDevin:
+    def __init__(self, sessions: list[dict[str, Any]]) -> None:
+        self._sessions = sessions
+
+    def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
+        return self._sessions
+
+
+class FakeGitHub:
+    def __init__(self, issues: dict[str, list[dict[str, Any]]] | None = None) -> None:
+        self.issues = issues or {}
+        self.pull_requests: dict[int, dict[str, Any]] = {}
+        self.calls: list[str] = []
+
+    def issues_with_label(self, label: str, state: str = "all") -> list[dict[str, Any]]:
+        return self.issues.get(label, [])
+
+    def get_pull_request(self, number: int) -> dict[str, Any]:
+        return self.pull_requests.get(number, {"state": "open", "head": {"ref": "devin/fix"}})
+
+    def close_pull_request(self, number: int) -> None:
+        self.calls.append(f"close_pr:{number}")
+
+    def close_issue(self, number: int) -> None:
+        self.calls.append(f"close_issue:{number}")
+
+    def delete_branch(self, branch: str) -> None:
+        self.calls.append(f"delete_branch:{branch}")
+
+
+def issue(number: int, label: str = "devin:ready") -> dict[str, Any]:
+    return {
+        "number": number,
+        "title": f"issue {number}",
+        "html_url": f"https://github.com/o/r/issues/{number}",
+        "state": "open",
+        "labels": [{"name": label}],
+    }
+
+
+def session(number: int, outcome: str | None = None, **extra: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {"issue_number": number}
+    if outcome:
+        out["outcome"] = outcome
+    out.update(extra.pop("output", {}))
+    return {
+        "session_id": extra.pop("session_id", f"session-{number}"),
+        "status_enum": extra.pop("status", "finished"),
+        "tags": ["superset-remediation"],
+        "structured_output": out,
+        **extra,
+    }
+
+
+# ------------------------------------------------------------- pure functions
+
+
+def test_issue_number_from_structured_output_then_tag():
+    assert issue_number_for(session(7)) == 7
+    assert issue_number_for({"tags": ["issue-9"], "structured_output": {}}) == 9
+    assert issue_number_for({"tags": [], "structured_output": {}}) is None
+
+
+def test_finished_session_without_a_pr_is_not_success():
+    """The most important negative case: 'the session ended' is not an outcome."""
+    assert stage_for_session(session(1, status="finished")) == "dispatched"
+
+
+def test_validated_pr_reaches_verified_but_not_merged():
+    s = session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/3"})
+    assert stage_for_session(s) == "verified"
+    assert stage_for_session(s, pr_state="merged") == "merged"
+
+
+def test_failed_validation_stops_at_pr_open():
+    s = session(1, "pr_opened_validation_failed", output={"pr_url": "https://github.com/o/r/pull/3"})
+    assert stage_for_session(s) == "pr_open"
+    assert failure_reason(s, 3600) == "verification_failed"
+
+
+def test_failure_taxonomy_distinguishes_causes():
+    assert failure_reason(session(1, "no_matching_class"), 3600) == "no_matching_class"
+    assert failure_reason({"status_enum": "blocked", "structured_output": {}}, 3600) == "blocked_on_human"
+    assert failure_reason({"status_enum": "finished", "structured_output": {}}, 3600) == "no_output"
+    assert failure_reason(session(1, "pr_opened_validated"), 3600) is None
+
+
+def test_timeout_is_detected_from_age():
+    stuck = {"status_enum": "running", "structured_output": {}, "created_at": 0}
+    assert failure_reason(stuck, timeout_seconds=10, now=1000) == "timed_out"
+
+
+def test_task_update_carries_both_validation_commands():
+    s = session(
+        1,
+        "pr_opened_validated",
+        output={
+            "validate_command": "pytest -q tests/x",
+            "validate_command_from_registry": "pytest -q tests/y",
+        },
+    )
+    update = task_update_from_session(s)
+    assert update["validate_command"] != update["validate_registry"]
+
+
+# ----------------------------------------------------------------- the cycle
+
+
+def build(tmp_path, sessions=None, issues=None):
+    store = Store(str(tmp_path / "s.db"))
+    github = FakeGitHub(issues or {})
+    return store, github, Reconciler(store, FakeDevin(sessions or []), github, FakeConfig())
+
+
+def test_detection_then_dispatch_is_recorded_once(tmp_path):
+    store, _, reconciler = build(
+        tmp_path,
+        sessions=[session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})],
+        issues={"devin:ready": [issue(1)]},
+    )
+    reconciler.cycle()
+    reconciler.cycle()
+    assert len([e for e in store.events() if e["kind"] == "detected"]) == 1
+    assert store.get_task(1)["attempts"] == 1
+    assert store.get_task(1)["stage"] == "verified"
+
+
+def test_second_session_on_one_issue_counts_as_rework(tmp_path):
+    """A human requesting changes fires a new session; that is attempt 2 of the
+    same issue, not a duplicate task."""
+    store, _, reconciler = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    reconciler.devin = FakeDevin([session(1, session_id="a")])
+    reconciler.cycle()
+    reconciler.devin = FakeDevin([session(1, session_id="b")])
+    reconciler.cycle()
+    assert store.get_task(1)["attempts"] == 2
+    assert store.get_task(1)["session_id"] == "b"
+
+
+def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):
+    store, github, reconciler = build(
+        tmp_path,
+        sessions=[session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})],
+        issues={"devin:ready": [issue(1)], "devin:rejected": [issue(1, "devin:rejected")]},
+    )
+    reconciler.cycle()
+    task = store.get_task(1)
+    assert task["rejected"] == 1
+    assert task["outcome"] == "human_rejected"
+    assert task["failure_reason"] is None  # rejection is not a remediation failure
+    assert github.calls == ["close_pr:5", "delete_branch:devin/fix", "close_issue:1"]
+
+
+def test_cleanup_is_idempotent(tmp_path):
+    store, github, reconciler = build(
+        tmp_path, issues={"devin:rejected": [issue(1, "devin:rejected")]}
+    )
+    reconciler.cycle()
+    reconciler.cycle()
+    assert github.calls.count("close_issue:1") == 1
+
+
+def test_a_broken_api_does_not_kill_the_loop(tmp_path):
+    """A cycle that throws must still stamp freshness data, so the dashboard can
+    say it is stale instead of quietly serving old numbers."""
+    store, _, reconciler = build(tmp_path)
+
+    class Boom:
+        def list_sessions(self, **_: Any) -> list[dict[str, Any]]:
+            raise RuntimeError("devin is down")
+
+    reconciler.devin = Boom()
+    stats = reconciler.cycle()
+    assert stats["errors"] == 1
+    assert store.get_meta("last_reconciled") is not None
+
+
+def test_nothing_in_the_client_can_merge():
+    """The one invariant the user asked for, enforced by grep."""
+    from pathlib import Path
+
+    source = Path("src/github.py").read_text()
+    assert "/merge" not in source
+    assert "merge_method" not in source

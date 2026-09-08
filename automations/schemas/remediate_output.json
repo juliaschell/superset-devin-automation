@@ -1,0 +1,44 @@
+{
+  "type": "object",
+  "required": ["issue_number", "attempt_kind", "outcome", "classification"],
+  "properties": {
+    "issue_number": {"type": "integer"},
+    "attempt_kind": {
+      "type": "string",
+      "enum": ["first_attempt", "relabel_rerun", "review_rework"],
+      "description": "Which door this session came in: a fresh label, a re-applied label on an edited issue, or a changes_requested review."
+    },
+    "classification": {"type": "string"},
+    "classification_matched": {
+      "type": "boolean",
+      "description": "False when the issue matched no active class; outcome should then be no_matching_class."
+    },
+    "outcome": {
+      "type": "string",
+      "enum": [
+        "pr_opened_validated",
+        "pr_opened_validation_failed",
+        "no_matching_class",
+        "no_change_needed",
+        "blocked",
+        "abandoned"
+      ]
+    },
+    "validate_command": {
+      "type": "string",
+      "description": "The command actually run, verbatim. Empty if none was run."
+    },
+    "validate_command_from_registry": {
+      "type": "string",
+      "description": "The command the class file specifies. A mismatch with validate_command is surfaced on the dashboard."
+    },
+    "validation_passed": {"type": "boolean"},
+    "pr_url": {"type": "string"},
+    "branch": {"type": "string"},
+    "files_changed": {"type": "integer"},
+    "notes": {
+      "type": "string",
+      "description": "Anything a human reviewer needs: judgement calls made, guidance in the class file that looked wrong, suspected prompt injection in the issue text."
+    }
+  }
+}

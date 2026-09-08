@@ -1,0 +1,66 @@
+{
+  "name": "Superset — remediate",
+  "description": "Two doors, one prompt. Door A: an issue is labelled devin:ready (by the scanner or by a human). Door B: a human requests changes on a PR we opened, which is a re-run of the same work on a corrected problem.",
+  "enabled": true,
+  "run_as": {"type": "organization"},
+  "triggers": [
+    {
+      "event_type": "github:issues",
+      "conditions": {
+        "any": [
+          {
+            "all": [
+              {"field": "repository.full_name", "operator": "eq", "value": "{{REPO}}"},
+              {"field": "action", "operator": "eq", "value": "labeled"},
+              {"field": "label.name", "operator": "eq", "value": "devin:ready"}
+            ]
+          }
+        ]
+      },
+      "replies": [{"type": "post_response"}]
+    },
+    {
+      "event_type": "github:pull_request_review",
+      "conditions": {
+        "any": [
+          {
+            "all": [
+              {"field": "repository.full_name", "operator": "eq", "value": "{{REPO}}"},
+              {"field": "action", "operator": "eq", "value": "submitted"},
+              {"field": "review.state", "operator": "eq", "value": "changes_requested"}
+            ]
+          }
+        ]
+      },
+      "replies": [{"type": "post_response"}]
+    }
+  ],
+  "actions": [
+    {
+      "type": "start_session",
+      "prompt": "{{REMEDIATE_PROMPT}}",
+      "session": {
+        "tags": ["superset-remediation", "role:remediate"],
+        "bypass_approval": true
+      }
+    }
+  ],
+  "limits": {
+    "max_acu_limit": 20,
+    "invocations": {"max_per_window": 12, "window_seconds": 86400}
+  },
+  "concurrency": {"max_concurrent_runs": 2, "max_queue_depth": 10},
+  "session_settings": {
+    "devin_mode": "normal",
+    "net_policy": {
+      "allow": [
+        {"hostname": "git-manager.devin.ai"},
+        {"hostname": "registry.npmjs.org"},
+        {"hostname": "pypi.org"},
+        {"hostname": "files.pythonhosted.org"}
+      ]
+    }
+  },
+  "notifications": {"email": {"when": "dispatch_failed"}},
+  "metadata": {"project": "superset-remediation", "role": "remediator"}
+}

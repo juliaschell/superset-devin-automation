@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="15">
+  <title>Superset remediation — control plane</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+    header { padding:20px 28px; border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:12px; }
+    h1 { font-size:16px; margin:0; font-weight:600; }
+    h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin:0 0 12px; font-weight:600; }
+    main { padding:24px 28px; display:grid; gap:20px; }
+    .row { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:16px; }
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:16px 18px; }
+    .kpi { font-size:30px; font-weight:600; }
+    .kpi small { font-size:12px; color:var(--dim); font-weight:400; }
+    .sub { color:var(--dim); font-size:12px; margin-top:4px; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th { text-align:left; color:var(--dim); font-weight:600; padding:6px 10px; border-bottom:1px solid var(--line); }
+    td { padding:6px 10px; border-bottom:1px solid #21262d; vertical-align:top; }
+    .bar { height:8px; background:#21262d; border-radius:4px; overflow:hidden; margin-top:6px; }
+    .bar span { display:block; height:100%; background:var(--accent); }
+    .ok { color:var(--ok); } .warn { color:var(--warn); } .bad { color:var(--bad); } .dim { color:var(--dim); }
+    a { color:var(--accent); text-decoration:none; }
+    .pill { display:inline-block; padding:1px 8px; border-radius:10px; border:1px solid var(--line); font-size:11px; }
+    .fresh { border-color:var(--ok); color:var(--ok); }
+    .stale { border-color:var(--bad); color:var(--bad); }
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Superset remediation — control plane</h1>
+    <div class="sub">{{ config.repo }} · mode <strong>{{ config.mode }}</strong> · PRs are never auto-merged</div>
+  </div>
+  <div>
+    {% set age = metrics.last_reconciled_seconds_ago %}
+    {% if age is none %}
+      <span class="pill stale">never reconciled</span>
+    {% elif age > config.poll_interval_seconds * 4 %}
+      <span class="pill stale">last reconciled {{ age }}s ago — stale</span>
+    {% else %}
+      <span class="pill fresh">last reconciled {{ age }}s ago</span>
+    {% endif %}
+    <span class="dim">· <a href="/report.md">report.md</a> · <a href="/metrics">/metrics</a></span>
+  </div>
+</header>
+
+<main>
+  <section class="row">
+    <div class="panel">
+      <h2>Success rate</h2>
+      <div class="kpi">{{ metrics.success_rate if metrics.success_rate is not none else '—' }}<small>%</small></div>
+      <div class="sub">verified PRs / settled tasks. A session that finished on a red build is not a success.</div>
+    </div>
+    <div class="panel">
+      <h2>Autonomy rate</h2>
+      <div class="kpi">{{ metrics.autonomy_rate if metrics.autonomy_rate is not none else '—' }}<small>%</small></div>
+      <div class="sub">reached a verified PR with no human pulled in.</div>
+    </div>
+    <div class="panel">
+      <h2>Human rejection</h2>
+      <div class="kpi">{{ metrics.human_rejection_rate if metrics.human_rejection_rate is not none else '—' }}<small>%</small></div>
+      <div class="sub">Devin succeeded, we didn't want it. Judges the scanner, not the fixer.</div>
+    </div>
+    <div class="panel">
+      <h2>Attempts / issue</h2>
+      <div class="kpi">{{ metrics.attempts_per_issue }}</div>
+      <div class="sub">{{ metrics.reworked_issues }} issue(s) reworked after human review.</div>
+    </div>
+  </section>
+
+  <section class="row" style="grid-template-columns:2fr 1fr;">
+    <div class="panel">
+      <h2>Funnel — cumulative, ever reached</h2>
+      {% set top = metrics.funnel.values()|max if metrics.funnel else 1 %}
+      <table>
+        {% for stage, count in metrics.funnel.items() %}
+        <tr>
+          <td style="width:110px">{{ stage }}</td>
+          <td style="width:40px" class="dim">{{ count }}</td>
+          <td><div class="bar"><span style="width: {{ (100 * count / top) if top else 0 }}%"></span></div></td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="panel">
+      <h2>Why work failed</h2>
+      {% if metrics.failure_taxonomy %}
+      <table>
+        {% for reason, count in metrics.failure_taxonomy.items() %}
+        <tr><td>{{ reason }}</td><td class="bad">{{ count }}</td></tr>
+        {% endfor %}
+      </table>
+      {% else %}<div class="sub">Nothing has failed in this window.</div>{% endif %}
+    </div>
+  </section>
+
+  <section class="row" style="grid-template-columns:1fr 1fr;">
+    <div class="panel">
+      <h2>Classifications — the human control surface</h2>
+      <table>
+        <tr><th>class</th><th>vol</th><th>success</th><th>rejected</th><th>validate ≠ registry</th></tr>
+        {% for name, bucket in metrics.per_class.items() %}
+        <tr>
+          <td>{{ name }}</td>
+          <td>{{ bucket.volume }}</td>
+          <td class="ok">{{ bucket.success_rate if bucket.success_rate is not none else '—' }}</td>
+          <td class="{{ 'bad' if bucket.rejection_rate else 'dim' }}">{{ bucket.rejection_rate if bucket.rejection_rate is not none else '—' }}</td>
+          <td class="{{ 'warn' if bucket.validation_mismatch else 'dim' }}">{{ bucket.validation_mismatch }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      <div class="sub">Rejection rate is the signal to mute a class — a registry edit, not a code change.</div>
+    </div>
+    <div class="panel">
+      <h2>Cost</h2>
+      <table>
+        <tr><td>build (planning + implementation)</td><td>{{ metrics.cost.build_acus }} ACU</td></tr>
+        <tr><td>run</td><td>{{ metrics.cost.run_acus }} ACU</td></tr>
+        <tr><td>per merged PR</td><td>{{ metrics.cost.acus_per_merged_pr or '—' }}</td></tr>
+        <tr><td>per issue detected</td><td>{{ metrics.cost.acus_per_issue_detected or '—' }}</td></tr>
+        <tr><td>median time to PR</td><td>{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>
+      </table>
+      <div class="sub">{{ metrics.cost.source }}.</div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Tasks</h2>
+    <table>
+      <tr><th>issue</th><th>class</th><th>stage</th><th>outcome</th><th>attempts</th><th>validated</th><th>PR</th></tr>
+      {% for task in tasks %}
+      <tr>
+        <td><a href="{{ task.issue_url }}">#{{ task.issue_number }}</a> {{ task.title[:60] }}</td>
+        <td>{{ task.classification or '—' }}</td>
+        <td>{{ task.stage }}</td>
+        <td class="{{ 'bad' if task.failure_reason else '' }}">{{ task.failure_reason or task.outcome or '—' }}</td>
+        <td>{{ task.attempts }}</td>
+        <td class="{{ 'ok' if task.validation_passed == 1 else ('bad' if task.validation_passed == 0 else 'dim') }}">
+          {{ '✓' if task.validation_passed == 1 else ('✗' if task.validation_passed == 0 else '—') }}
+        </td>
+        <td>{% if task.pr_url %}<a href="{{ task.pr_url }}">{{ task.pr_state or 'open' }}</a>{% else %}—{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+
+  <section class="panel">
+    <h2>Event log — the only data that exists nowhere else</h2>
+    <table>
+      {% for event in events %}
+      <tr>
+        <td class="dim" style="width:70px">{{ event.kind }}</td>
+        <td style="width:70px">{% if event.issue_number %}#{{ event.issue_number }}{% endif %}</td>
+        <td>{{ event.detail or '' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </section>
+</main>
+</body>
+</html>

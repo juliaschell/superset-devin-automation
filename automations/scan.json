@@ -45,6 +45,9 @@
     "net_policy": {
       "allow": [
         {"hostname": "git-manager.devin.ai"},
+        {"hostname": "api.github.com"},
+        {"hostname": "github.com"},
+        {"hostname": "codeload.github.com"},
         {"hostname": "registry.npmjs.org"},
         {"hostname": "pypi.org"},
         {"hostname": "files.pythonhosted.org"},

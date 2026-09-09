@@ -7,13 +7,23 @@ Everything here is the v3 organization API, under service-user RBAC
 it is not a fallback. That is the better surface anyway: the v3 session object
 carries ``structured_output``, ``pull_requests`` and ``acus_consumed``, which is
 every field the reconciler needs from one call.
+
+With one exception. ``structured_output`` is only populated for a session
+created with a schema attached, and the API rejects a schema on a session an
+automation spawns — so for every session this system observes it is ``null``,
+and the prompt asks for the same JSON in the final message instead. ``report``
+reads it from whichever of the two is present.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 import httpx
+
+JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 
 class DevinError(RuntimeError):
@@ -51,6 +61,41 @@ class DevinClient:
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         return self._request("GET", self._org_path(f"sessions/{session_id}"))
+
+    def messages(self, session_id: str) -> list[dict[str, Any]]:
+        data = self._request("GET", self._org_path(f"sessions/{session_id}/messages"))
+        return data.get("items", []) if isinstance(data, dict) else []
+
+    def report(self, session: dict[str, Any]) -> dict[str, Any]:
+        """What the session said it did, from wherever it managed to say it.
+
+        Costs one extra request per session, and only for sessions the platform
+        left without ``structured_output`` — which is all of them today. Parse
+        failures return ``{}`` rather than raising: a session that answered in
+        prose is a session we know less about, not a broken cycle.
+        """
+        out = session.get("structured_output")
+        if isinstance(out, dict) and out:
+            return out
+        session_id = session.get("session_id")
+        if not session_id:
+            return {}
+        try:
+            items = self.messages(str(session_id))
+        except DevinError:
+            return {}
+        for item in reversed(items):
+            text = item.get("message")
+            if not isinstance(text, str):
+                continue
+            for block in reversed(JSON_BLOCK.findall(text)):
+                try:
+                    parsed = json.loads(block)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict):
+                    return parsed
+        return {}
 
     # ------------------------------------------------------------ automations
 

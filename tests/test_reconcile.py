@@ -26,6 +26,10 @@ class FakeDevin:
     def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
         return self._sessions
 
+    def report(self, session: dict[str, Any]) -> dict[str, Any]:
+        out = session.get("structured_output")
+        return out if isinstance(out, dict) else {}
+
 
 class FakeGitHub:
     def __init__(self, issues: dict[str, list[dict[str, Any]]] | None = None) -> None:

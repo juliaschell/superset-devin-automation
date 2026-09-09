@@ -84,6 +84,13 @@ def _started_at(session: dict[str, Any]) -> float | None:
 
 
 def structured(session: dict[str, Any]) -> dict[str, Any]:
+    """The session's own report of what it did.
+
+    Read from ``structured_output`` — which the platform leaves null on every
+    automation-spawned session, because a schema cannot be attached to one. The
+    reconciler fills the field in from the session's final message before these
+    functions see it, so they stay pure and there is one place to read.
+    """
     out = session.get("structured_output")
     return out if isinstance(out, dict) else {}
 
@@ -253,6 +260,7 @@ class Reconciler:
         """What Devin is doing about it. One call for every in-flight session."""
         sessions = self.devin.list_sessions(tags=[self.config.session_tag])
         for session in sessions:
+            session = {**session, "structured_output": self.devin.report(session)}
             session_id = session.get("session_id")
             number = issue_number_for(session)
             if number is None:

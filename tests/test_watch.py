@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from control_plane.reconcile import (
-    Reconciler,
+from tracker.store import Store
+from tracker.watch import (
+    Watcher,
     failure_reason,
     issue_number_for,
     stage_for_session,
     task_update_from_session,
 )
-from control_plane.store import Store
 
 
 class FakeConfig:
@@ -157,17 +157,17 @@ def test_task_update_carries_both_validation_commands():
 def build(tmp_path, sessions=None, issues=None):
     store = Store(str(tmp_path / "s.db"))
     github = FakeGitHub(issues or {})
-    return store, github, Reconciler(store, FakeDevin(sessions or []), github, FakeConfig())
+    return store, github, Watcher(store, FakeDevin(sessions or []), github, FakeConfig())
 
 
 def test_detection_then_dispatch_is_recorded_once(tmp_path):
-    store, _, reconciler = build(
+    store, _, watcher = build(
         tmp_path,
         sessions=[session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})],
         issues={"devin:ready": [issue(1)]},
     )
-    reconciler.cycle()
-    reconciler.cycle()
+    watcher.cycle()
+    watcher.cycle()
     assert len([e for e in store.events() if e["kind"] == "detected"]) == 1
     assert store.get_task(1)["attempts"] == 1
     assert store.get_task(1)["stage"] == "verified"
@@ -176,11 +176,11 @@ def test_detection_then_dispatch_is_recorded_once(tmp_path):
 def test_second_session_on_one_issue_counts_as_rework(tmp_path):
     """A human requesting changes fires a new session; that is attempt 2 of the
     same issue, not a duplicate task."""
-    store, _, reconciler = build(tmp_path, issues={"devin:ready": [issue(1)]})
-    reconciler.devin = FakeDevin([session(1, session_id="a")])
-    reconciler.cycle()
-    reconciler.devin = FakeDevin([session(1, session_id="b")])
-    reconciler.cycle()
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="a")])
+    watcher.cycle()
+    watcher.devin = FakeDevin([session(1, session_id="b")])
+    watcher.cycle()
     assert store.get_task(1)["attempts"] == 2
     assert store.get_task(1)["session_id"] == "b"
 
@@ -189,30 +189,30 @@ def test_two_sessions_on_one_issue_do_not_inflate_attempts_per_poll(tmp_path):
     """The API returns concurrent sessions in no particular order, so counting
     "this session differs from the one on the row" charges a fresh attempt every
     cycle. Attempts are distinct sessions, however often they are seen."""
-    store, _, reconciler = build(tmp_path, issues={"devin:ready": [issue(1)]})
-    reconciler.devin = FakeDevin([session(1, session_id="a"), session(1, session_id="b")])
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="a"), session(1, session_id="b")])
     for _ in range(5):
-        reconciler.cycle()
+        watcher.cycle()
     assert store.get_task(1)["attempts"] == 2
 
 
 def test_an_unattached_session_is_logged_once_not_once_per_cycle(tmp_path):
     """Scan sessions never carry an issue number, so logging them on every poll
     would bury the event log within an hour."""
-    store, _, reconciler = build(tmp_path)
-    reconciler.devin = FakeDevin([session(None, session_id="scan")])
+    store, _, watcher = build(tmp_path)
+    watcher.devin = FakeDevin([session(None, session_id="scan")])
     for _ in range(4):
-        reconciler.cycle()
+        watcher.cycle()
     assert len([e for e in store.events() if e["kind"] == "session_unattached"]) == 1
 
 
 def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):
-    store, github, reconciler = build(
+    store, github, watcher = build(
         tmp_path,
         sessions=[session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})],
         issues={"devin:ready": [issue(1)], "devin:rejected": [issue(1, "devin:rejected")]},
     )
-    reconciler.cycle()
+    watcher.cycle()
     task = store.get_task(1)
     assert task["rejected"] == 1
     assert task["outcome"] == "human_rejected"
@@ -221,27 +221,27 @@ def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):
 
 
 def test_cleanup_is_idempotent(tmp_path):
-    store, github, reconciler = build(
+    store, github, watcher = build(
         tmp_path, issues={"devin:rejected": [issue(1, "devin:rejected")]}
     )
-    reconciler.cycle()
-    reconciler.cycle()
+    watcher.cycle()
+    watcher.cycle()
     assert github.calls.count("close_issue:1") == 1
 
 
 def test_a_broken_api_does_not_kill_the_loop(tmp_path):
     """A cycle that throws must still stamp freshness data, so the dashboard can
     say it is stale instead of quietly serving old numbers."""
-    store, _, reconciler = build(tmp_path)
+    store, _, watcher = build(tmp_path)
 
     class Boom:
         def list_sessions(self, **_: Any) -> list[dict[str, Any]]:
             raise RuntimeError("devin is down")
 
-    reconciler.devin = Boom()
-    stats = reconciler.cycle()
+    watcher.devin = Boom()
+    stats = watcher.cycle()
     assert stats["errors"] == 1
-    assert store.get_meta("last_reconciled") is not None
+    assert store.get_meta("last_checked") is not None
 
 
 def test_nothing_in_the_client_can_merge():
@@ -266,7 +266,7 @@ def test_pr_url_falls_back_to_the_api_view_of_the_session():
 def test_durations_come_from_github_not_from_this_process_clock(tmp_path):
     """A control plane started after the work would otherwise report a day-long
     cycle as the few seconds between its own first two observations."""
-    store, github, reconciler = build(
+    store, github, watcher = build(
         tmp_path,
         sessions=[
             session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})
@@ -278,7 +278,7 @@ def test_durations_come_from_github_not_from_this_process_clock(tmp_path):
         "created_at": "2026-09-01T01:00:00Z",
         "head": {"ref": "devin/fix"},
     }
-    reconciler.cycle()
+    watcher.cycle()
     task = store.get_task(1)
     assert task["pr_opened_at"] - task["detected_at"] == 3600
 

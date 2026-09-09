@@ -1,19 +1,11 @@
-"""State: one SQLite file, two tables, stdlib ``sqlite3``.
+"""One SQLite file, two tables, stdlib ``sqlite3``.
 
-The two tables are here for different reasons, and conflating them is how this
-design goes wrong:
+``task_events`` is the append-only history: transitions, our own decisions, and
+the timings every metric is derived from. It exists nowhere else.
 
-``task_events`` is append-only and is justified because **the data exists
-nowhere else** — state transitions, our own decisions, and the timing history
-every metric derives from. It is history, so it cannot disagree with anything.
-
-``tasks`` is a materialized view. Every field in it is re-derivable from Devin
-and GitHub, so it is *not* justified on those grounds. It earns its place on
-three narrower ones: read cost (otherwise every dashboard render fans out to two
-APIs), dedup via a uniqueness constraint, and our own annotations — rejection,
-cleanup state, attempt chains — which Devin has no concept of.
-
-Delete this file and you lose history, not correctness.
+``tasks`` is a cache of the latest state, all of it re-derivable from Devin and
+GitHub. It saves the dashboard two API fan-outs per render, and holds the few
+fields those APIs have no concept of: rejection, cleanup, attempt chains.
 """
 
 from __future__ import annotations
@@ -21,13 +13,11 @@ from __future__ import annotations
 import json
 import sqlite3
 import time
-from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 
-# The funnel, in order. "Furthest reached" is computed against this sequence,
-# because current-state counts render a finished run as a row of zeroes with
-# everything piled in the last column.
+# The funnel, in order. Counts are "ever reached" rather than current state,
+# which would render a finished run as zeroes with everything in the last column.
 STAGES = ["detected", "dispatched", "running", "pr_open", "verified", "merged"]
 
 SCHEMA = """
@@ -48,7 +38,6 @@ CREATE TABLE IF NOT EXISTS tasks (
     outcome             TEXT,
     acus                REAL,
     failure_reason      TEXT,
-    human_messages      INTEGER NOT NULL DEFAULT 0,
     rejected            INTEGER NOT NULL DEFAULT 0,
     cleaned_up          INTEGER NOT NULL DEFAULT 0,
     detected_at         REAL,
@@ -85,7 +74,7 @@ class Store:
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        # WAL lets the dashboard read while the reconciler writes; busy_timeout
+        # WAL lets the dashboard read while the watcher writes; busy_timeout
         # covers the moment they collide.
         self.conn.execute("PRAGMA journal_mode=WAL")
         self.conn.execute("PRAGMA busy_timeout=5000")
@@ -94,8 +83,9 @@ class Store:
         self.conn.commit()
 
     def _add_missing_columns(self) -> None:
-        """``CREATE TABLE IF NOT EXISTS`` leaves an older file on its old shape,
-        so new columns are added here rather than by rebuilding the database."""
+        """`CREATE TABLE IF NOT EXISTS` leaves an existing file on its old
+        shape, so a column added later is added here rather than by rebuilding
+        the database."""
         have = {row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)")}
         for name, decl in (("acus", "REAL"),):
             if name not in have:
@@ -136,17 +126,16 @@ class Store:
     def upsert_task(self, issue_number: int, **fields: Any) -> bool:
         """Insert or update a task. Returns True if this created a new row.
 
-        Devin and GitHub are authoritative for everything they report, so this
-        overwrites rather than merging. ``None`` values are ignored so a partial
-        observation never blanks a field we already know.
+        Devin and GitHub are authoritative, so this overwrites rather than
+        merges. ``None`` is ignored, so a partial observation never blanks a
+        field already known.
         """
         fields = {k: v for k, v in fields.items() if v is not None}
         now = time.time()
         existing = self.get_task(issue_number)
         if existing is None:
-            # A caller that knows when the work was really detected (GitHub's
-            # issue timestamp) says so; only otherwise does the row date itself
-            # from when this process happened to look.
+            # Only fall back to this clock when the caller does not know
+            # GitHub's timestamp for the issue.
             defaults = {
                 k: now for k in ("detected_at", "updated_at") if k not in fields
             }
@@ -183,10 +172,9 @@ class Store:
     def session_ids_for(self, issue_number: int) -> set[str]:
         """Every session ever observed against this issue.
 
-        Attempts are counted from this rather than from "the session I am
-        looking at differs from the one on the row": two sessions against one
-        issue are returned in no particular order by the API, so that
-        comparison alternates and counts a fresh attempt on every poll.
+        Attempts are counted from this set, because the API lists an issue's
+        sessions in no fixed order: comparing against the session on the row
+        would alternate and count a fresh attempt on every poll.
         """
         rows = self.conn.execute(
             "SELECT DISTINCT session_id FROM task_events"
@@ -196,12 +184,8 @@ class Store:
         return {row["session_id"] for row in rows}
 
     def advance(self, issue_number: int, stage: str, detail: str | None = None) -> None:
-        """Record that a task reached ``stage``.
-
-        Monotonic: an observation implying an earlier stage (a session object
-        that has not caught up, say) never rewinds a task that already opened a
-        PR.
-        """
+        """Record that a task reached ``stage``. Monotonic: a stale observation
+        never rewinds a task that already opened a PR."""
         task = self.get_task(issue_number)
         if task and task["stage"] == stage:
             return
@@ -209,9 +193,8 @@ class Store:
             if STAGES.index(stage) < STAGES.index(task["stage"]):
                 return
         stamp: dict[str, Any] = {"stage": stage}
-        # Never restamp: GitHub's own timestamp for the PR, written when the
-        # reconciler first saw it, beats this clock — and on a database created
-        # after the work, this clock would report minutes for a day-old cycle.
+        # Never restamped, and only used where GitHub gave us no timestamp of
+        # its own: this clock knows when we looked, not when the work happened.
         column = {
             "dispatched": "dispatched_at",
             "pr_open": "pr_opened_at",
@@ -229,14 +212,10 @@ class Store:
         )
 
     def furthest_stages(self) -> dict[str, int]:
-        """Cumulative funnel: how many tasks *ever reached* each stage.
-
-        Derived from the event log rather than current state — the whole reason
-        the log exists.
-        """
+        """Cumulative funnel: how many tasks ever reached each stage, from the
+        event log rather than from current state."""
         counts = dict.fromkeys(STAGES, 0)
-        # Every known task reached "detected" by definition, whether or not a
-        # transition was ever logged for it.
+        # Every known task reached "detected", logged transition or not.
         reached: dict[int, set[str]] = {
             row["issue_number"]: {"detected"}
             for row in self.conn.execute("SELECT issue_number FROM tasks").fetchall()
@@ -267,7 +246,3 @@ class Store:
     def get_meta(self, key: str) -> str | None:
         row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
-
-    def bulk_log(self, events: Iterable[dict[str, Any]]) -> None:
-        for event in events:
-            self.log(**event)

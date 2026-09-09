@@ -20,11 +20,11 @@ up:
 scan:
 	python -m scanner.run_now
 
-## Everyone. Stop the control plane. State survives in the `state` volume.
+## Everyone. Stop the tracker. State survives in the `state` volume.
 down:
 	$(COMPOSE) down
 
-## Everyone. Follow the control plane's logs.
+## Everyone. Follow the tracker's logs.
 logs:
 	$(COMPOSE) logs -f
 
@@ -36,7 +36,7 @@ bootstrap:
 
 ## Anyone working on this repo. The dashboard, without a container.
 run:
-	uvicorn control_plane.app:app --host 0.0.0.0 --port 8000
+	uvicorn tracker.app:app --host 0.0.0.0 --port 8000
 
 # --- working on this repo ---------------------------------------------------
 
@@ -51,7 +51,7 @@ lint:
 	ruff check .
 
 types:
-	mypy bootstrap control_plane scanner shared
+	mypy bootstrap tracker scanner shared
 
 test:
 	pytest -q

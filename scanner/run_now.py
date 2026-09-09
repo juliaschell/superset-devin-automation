@@ -14,11 +14,8 @@ from __future__ import annotations
 
 import os
 import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from shared.github import GitHubClient, GitHubError  # noqa: E402
+from shared.github import GitHubClient, GitHubError
 
 LABEL = os.environ.get("SCAN_LABEL", "devin:scan")
 BODY = (

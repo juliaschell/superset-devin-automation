@@ -1,23 +1,11 @@
-"""Devin API client.
+"""Devin API client — all of it the v3 organization API.
 
-Everything here is the v3 organization API, under service-user RBAC
-(``ViewOrgAutomations`` / ``ManageOrgAutomations`` / ``ViewOrgSessions``).
+``/v1/sessions`` is the personal surface and rejects a service key, so it is not
+a fallback. v3 is the better surface anyway: one call per cycle returns every
+tagged session with its pull requests attached.
 
-``/v1/sessions`` is the personal surface and rejects a service key outright, so
-it is not a fallback. That is the better surface anyway: the v3 session object
-carries ``structured_output``, ``pull_requests`` and ``acus_consumed``, which is
-every field the reconciler needs from one call.
-
-With one exception. ``structured_output`` is only populated for a session
-created with a schema attached, and the API rejects a schema on a session an
-automation spawns — so for every session this system observes it is ``null``,
-and the prompt asks for the same JSON in the final message instead. ``report``
-reads it from whichever of the two is present.
-
-Cost has the same shape of problem. ``acus_consumed`` on the session object
-reads ``0.0`` for every session here, so ``session_acus`` asks the billing
-surface instead — ``consumption/daily/sessions/{id}``, which is the endpoint
-the usage dashboard is built on.
+Two of its fields do not behave as documented, and ``report`` and
+``session_acus`` are the workarounds — see each.
 """
 
 from __future__ import annotations
@@ -30,10 +18,9 @@ import httpx
 
 JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
-# A session's *first* message is the trigger payload, which is itself fenced
-# JSON — so "the newest JSON block" finds the GitHub event on any session that
-# has not reported yet, and files the webhook as a result. A report is one of
-# the two output schemas, and these keys are what distinguish them.
+# A session's first message is the trigger payload, itself fenced JSON, so
+# "newest JSON block" alone would file a GitHub webhook as a session's report.
+# These keys are what distinguish the two output schemas from anything else.
 REPORT_KEYS = frozenset({"outcome", "issues_filed", "classes_proposed"})
 
 
@@ -51,10 +38,9 @@ class DevinClient:
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        # A transport failure is raised as DevinError like any other, so the one
-        # slow request in a cycle degrades that reading rather than aborting the
-        # pass: callers already treat DevinError as "we know less this cycle".
-        # Retried once, because the read timeouts seen here are transient.
+        # Retried once: the read timeouts seen here are transient. A second
+        # failure is a DevinError like any other, which callers treat as "we
+        # know less this cycle" rather than aborting the pass.
         for attempt in (1, 2):
             try:
                 response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
@@ -69,11 +55,8 @@ class DevinClient:
     # -------------------------------------------------------------- sessions
 
     def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        """One call returns every session for our tag.
-
-        Tagging every automation-spawned session means the reconciler makes a
-        single request per cycle rather than one per task.
-        """
+        """Every session carrying our tag — one request per cycle, not one per
+        task, which is why the automations tag what they spawn."""
         params: dict[str, Any] = {"limit": limit}
         if tags:
             params["tags"] = ",".join(tags)
@@ -90,11 +73,14 @@ class DevinClient:
     def report(self, session: dict[str, Any]) -> dict[str, Any]:
         """What the session said it did, from wherever it managed to say it.
 
-        Costs one extra request per session, and only for sessions the platform
-        left without ``structured_output`` — which is all of them here. Parse
-        failures return ``{}`` rather than raising: a session that answered in
-        prose is a session we know less about, not a broken cycle. So does a
-        session still working, whose only JSON so far is its own trigger.
+        ``structured_output`` is only populated when a schema was attached at
+        creation, and the API rejects a schema on an automation-spawned
+        session — so it is null for every session here and the prompt asks for
+        the same JSON in the final message instead.
+
+        Returns ``{}`` rather than raising when nothing parses: a session that
+        answered in prose, or has not answered yet, is one we know less about,
+        not a broken cycle.
         """
         out = session.get("structured_output")
         if isinstance(out, dict) and out:
@@ -120,18 +106,15 @@ class DevinClient:
         return {}
 
     def session_acus(self, session_id: str) -> float | None:
-        """What the session cost, from the billing surface rather than the session.
+        """What the session cost, from the billing surface.
 
         ``acus_consumed`` on the session object reads ``0.0`` even for sessions
-        that plainly did work, so the authoritative figure is the consumption
-        API — the same data the usage dashboard shows, keyed by session, ACUs
-        attributed to the day they were burned.
+        that plainly did work, so the figure comes from the consumption API —
+        the data behind the usage dashboard.
 
-        Returns ``None`` when the org reports no consumption rows at all, which
-        is a different statement from zero: ``0.0`` would claim the session was
-        free, and nothing here is entitled to claim that. Below the Enterprise
-        plan the endpoint answers but returns an empty series, so ``None`` is
-        the usual answer for a self-serve account.
+        No consumption rows returns ``None``, not ``0.0``: unknown is not free.
+        Below the Enterprise plan the endpoint answers with an empty series, so
+        ``None`` is the usual answer on a self-serve account.
         """
         ident = session_id if session_id.startswith("devin-") else f"devin-{session_id}"
         try:
@@ -155,12 +138,9 @@ class DevinClient:
         return data.get("items", []) if isinstance(data, dict) else []
 
     def automation_schemas(self) -> dict[str, Any]:
-        """The platform's trigger catalogue: event types, their filterable fields,
-        and which reply kinds each supports.
-
-        There is no server-side dry-run endpoint, so this is what ``--check``
-        validates against — the authoritative shape, fetched rather than assumed.
-        """
+        """The platform's trigger catalogue: event types, filterable fields, and
+        supported actions. There is no dry-run endpoint, so ``--check``
+        validates a definition against this rather than against assumptions."""
         data = self._request("GET", self._org_path("automations/schemas"))
         return data if isinstance(data, dict) else {}
 

@@ -1,7 +1,7 @@
 # Instructions for an agent operating this repository
 
-This is the control plane for a Devin-driven detect → fix → verify loop on a
-fork of Apache Superset. If someone has pointed you at this repo and asked you
+This repository runs a Devin-driven detect → fix → verify loop on a fork of
+Apache Superset. If someone has pointed you at this repo and asked you
 to run it, this file is the whole procedure.
 
 ## The one rule
@@ -55,7 +55,7 @@ idle. Tell them, and check it first if nothing fires.
 3. Each remediation session opens a PR that has passed its class's validation
    command. Nothing merges them.
 4. The dashboard at `http://localhost:8000` shows the funnel; `/report.md` is
-   the same thing written out, and `/healthz` fails if reconciliation stalls.
+   the same thing written out, and `/healthz` fails if the watch loop stalls.
 
 Detection is only as good as the registry, so if the person wants to see the
 loop close in one sitting, the useful thing to do is help them review the class
@@ -65,7 +65,7 @@ proposals — not to add classes yourself.
 
 - One directory per system: `scanner/` and `remediator/` each hold the
   automation spec, the prompt and the output schema that define them;
-  `control_plane/` is the service, `shared/` its clients, `bootstrap/` the
+  `tracker/` is the service, `shared/` its clients, `bootstrap/` the
   setup pass. Change behaviour by editing those files and re-running bootstrap.
   Do not edit automations in the Devin UI — the next bootstrap would overwrite
   the change and the diff would exist nowhere.

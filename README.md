@@ -38,8 +38,8 @@ invariant; everything else in here is a tunable.
                                                        → same branch, attempt 2
 ```
 
-The control plane polls Devin and GitHub, writes what it sees to SQLite, and
-serves the dashboard, `/metrics`, and `report.md`.
+The tracker polls Devin and GitHub, writes down what it sees, and serves the
+dashboard, `/metrics` and `report.md`.
 
 ### What is Devin's and what is ours
 
@@ -55,14 +55,14 @@ interesting part of this design, so it is explicit:
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
 | Budget, concurrency, egress | Devin `limits` / `concurrency` / `net_policy` | native guardrails |
 | The remediation procedure | Devin playbook, referenced by the automation prompt | the prompt binds a repo and a trigger; the playbook says how the work is done, and is versioned here as `remediator/playbook.md` |
-| Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the reconciler, and a missing one is recorded, not assumed |
+| Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the tracker, and a missing one is recorded, not assumed |
 | Correlating attempts to an issue | **ours** | |
 | Longitudinal outcomes, cost, funnel | **ours** | Automations record *invocations*; the question here is *outcomes* |
 | Cleanup of rejected work | **ours** | |
 
 Where the platform behaved differently from its documentation, the measured
-behaviour and its consequence are written down in
-[`docs/devin-api.md`](docs/devin-api.md) rather than worked around quietly.
+behaviour and its consequence are written down beside the code that works
+around it, in `shared/devin.py`.
 
 That last block is the whole reason this repo exists. The Activity tab answers
 "did it fire". It cannot answer "did the fix hold, how long did it take, what
@@ -171,7 +171,7 @@ says who it is for in the comment above it.
 | `/metrics` | Prometheus |
 | `/metrics.json` | same numbers as JSON |
 | `/report.md` | the honest write-up, methodology first |
-| `/healthz` | 503 if reconciliation has gone stale |
+| `/healthz` | 503 if the watch loop has gone stale |
 
 ---
 
@@ -193,10 +193,10 @@ Definitions are choices, so they are stated rather than implied:
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
 - **Durations come from GitHub's timestamps**, not from this process's clock:
-  when the issue was filed and when the PR was opened or merged. A control plane
-  started after the work — which is exactly what happens on a fresh clone —
-  would otherwise report a day-long cycle as the few seconds between its own
-  first two observations.
+  when the issue was filed and when the PR was opened or merged. A tracker
+  started after the work — which is what happens on a fresh clone — would
+  otherwise report a day-long cycle as the few seconds between its own first two
+  observations.
 - **Cost is measured or it is absent — never typed in, never zero.** Run spend
   is fetched per session from
   `GET /v3/organizations/{org}/consumption/daily/sessions/{session_id}` — the
@@ -227,7 +227,7 @@ cheap, so they are not pre-built:
 
 | Move to… | When |
 |---|---|
-| Postgres | reconcilers span more than one host, or sustained concurrency exceeds ~10 sessions |
+| Postgres | trackers span more than one host, or sustained concurrency exceeds ~10 sessions |
 | A separate worker process | dashboard latency is affected by the poll loop |
 | A workflow engine (Temporal et al.) | steps need durable retries across process restarts, or the state machine exceeds ~10 states |
 | Event sourcing (drop the `tasks` table) | you need to reconstruct *system state* at a past time, not just events |
@@ -238,15 +238,15 @@ cheap, so they are not pre-built:
 
 `task_events` is append-only and justified because the data **exists nowhere
 else**: transitions, our own decisions, and the timings every metric derives
-from. `tasks` is a materialized view — every field re-derivable from Devin and
-GitHub — and earns its place only on read cost, dedup, and our own annotations
-(rejection, cleanup, attempt chains). Delete the file and you lose history, not
-correctness.
+from. `tasks` is a cache of the latest state — every field re-derivable from
+Devin and GitHub — and earns its place on read cost, dedup, and our own
+annotations (rejection, cleanup, attempt chains). Delete the file and you lose
+history, not correctness.
 
 Devin is authoritative for session and PR state; we overwrite rather than merge,
 so drift is *staleness*, never a conflict. The dashboard prints how stale it is,
-and `/healthz` fails when reconciliation stops — a dashboard that has quietly
-stopped updating is worse than one that is down.
+and `/healthz` fails when the loop stops — a dashboard that has quietly stopped
+updating is worse than one that is down.
 
 ---
 
@@ -298,8 +298,8 @@ remediator/           fixes them, validates the fix, opens a PR
   prompt.md
   output_schema.json
   playbook.md         the remediation procedure, held by the platform
-control_plane/        the only code that runs here: watch, record, report
-  reconcile.py        the only logic that matters; pure functions, testable
+tracker/              the only code that runs here: watch, record, report
+  watch.py            what each observation means; pure functions, testable
   metrics.py          every definition above, in code
   store.py            two tables, and why each exists
   app.py, templates/  the dashboard and its endpoints
@@ -310,13 +310,10 @@ bootstrap/            one idempotent pass from nothing to a running system
   playbooks.py        create/update the playbooks over REST
   automations.py      validate (--check) or create/update over REST
 docker/               Dockerfile + compose.yml, out of the way of the code
-docs/
-  devin-api.md        what the API was asked for, and what it actually does
-  audit.md            four reviewers reading this system
 tests/                including one that asserts we cannot merge
 ```
 
-Metrics have no directory of their own: they are the control plane's reason for
+Metrics have no directory of their own: they are the tracker's reason for
 existing rather than a system beside it.
 
 Dependencies are declared once, in `pyproject.toml` — the runtime four, plus a

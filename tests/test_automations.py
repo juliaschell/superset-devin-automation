@@ -67,8 +67,8 @@ def test_egress_is_an_explicit_allowlist():
         assert "*" not in hosts.replace('"*/*"', "")
 
 
-def test_sessions_are_tagged_for_reconciliation():
-    """The reconciler finds work by tag; an untagged automation is invisible."""
+def test_sessions_are_tagged_for_watching():
+    """The watcher finds work by tag; an untagged automation is invisible."""
     for role in ("scanner", "remediator"):
         spec = render(role, REPO, 8)
         for action in spec["actions"]:
@@ -91,7 +91,7 @@ def test_prompts_forbid_merging():
 
 def test_structured_output_schema_is_stated_in_the_prompt():
     """The API rejects a schema on the spawned session, so the shape is requested
-    in the prompt instead. That makes it advisory, which is why the reconciler
+    in the prompt instead. That makes it advisory, which is why the watcher
     treats every structured field as optional."""
     spec = render("remediator", REPO, 8)
     action = next(a for a in spec["actions"] if a["type"] == "start_session")

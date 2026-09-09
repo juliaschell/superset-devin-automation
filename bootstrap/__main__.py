@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
-"""Point the whole system at a fork, in one command.
+"""Point the whole system at a fork, in one command:
 
-Everything here is idempotent, so running it against an already-configured fork
-is a no-op that prints what it found. What it does, in order:
+1. fork Superset if the repo does not exist yet, and turn Issues on;
+2. create the four labels the automations trigger on;
+3. seed the classification registry's format spec;
+4. create or update the playbook and both automations, scoped to this fork;
+5. optionally fire the first scan.
 
-1. forks Superset if the repo does not exist yet, and turns Issues on — forks
-   have them off by default, and the whole pipeline files issues;
-2. creates the four labels the automations trigger on;
-3. seeds an empty classification registry, so the first scan has a format to
-   follow and proposes classes instead of inventing one;
-4. creates or updates the remediation playbook and both automations over REST,
-   scoped to this fork;
-5. optionally fires the first scan.
+Idempotent throughout, so a second run against a configured fork just prints
+what it found — which is what lets compose run it on every start.
 
     REPO=you/superset python -m bootstrap --scan
 
@@ -26,11 +23,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from bootstrap import automations, playbooks  # noqa: E402
-from scanner import run_now  # noqa: E402
-from shared.github import GitHubClient, GitHubError  # noqa: E402
+from bootstrap import automations, playbooks
+from scanner import run_now
+from shared.github import GitHubClient, GitHubError
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ".devin/classifications"
@@ -63,9 +58,9 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
         else:
             return [f"{repo} did not appear after forking; re-run once GitHub finishes"]
 
-    # Write access is established by attempting a write, not by reading
-    # `permissions`: a GitHub App installation token reports every permission
-    # false there while happily creating labels and issues.
+    # Write access is proved by attempting a write, never by reading
+    # `permissions`: an App installation token reports every permission false
+    # there while happily creating labels and issues.
     if info.get("has_issues"):
         return []
     try:
@@ -80,11 +75,8 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
 
 
 def seed_registry(github: GitHubClient) -> None:
-    """Give a fresh fork the registry's format spec and nothing else.
-
-    Deliberately no starter classes: what counts as a defect here is the
-    human's call, and the first scan proposes candidates to accept or decline.
-    """
+    """The registry's format spec and nothing else: what counts as a defect in
+    this repo is the human's call, and the first scan proposes candidates."""
     if github.file_exists(f"{REGISTRY}/README.md"):
         print(f"= {REGISTRY}/README.md already present")
         return

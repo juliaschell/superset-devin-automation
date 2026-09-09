@@ -1,14 +1,14 @@
 services:
-  control-plane:
+  tracker:
     build:
       context: ..
       dockerfile: docker/Dockerfile
-    # Bootstrap is idempotent, so every start reconciles the fork's labels,
-    # registry and the two automations with what is checked in here, then
-    # serves the dashboard. One command from nothing to a running system.
+    # Bootstrap is idempotent, so every start brings the fork's labels,
+    # registry and automations back in line with what is checked in here,
+    # then serves the dashboard.
     command: >
       sh -c "python -m bootstrap &&
-             uvicorn control_plane.app:app --host 0.0.0.0 --port 8000"
+             uvicorn tracker.app:app --host 0.0.0.0 --port 8000"
     ports:
       - "8000:8000"
     # Passed through from the shell rather than read from a file: there is no

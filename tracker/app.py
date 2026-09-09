@@ -1,8 +1,7 @@
-"""One FastAPI process: dashboard, metrics, report, and the reconcile loop.
+"""One FastAPI process: the watch loop, the dashboard, and its endpoints.
 
-One container, one process, one datastore. The loop is an asyncio task rather
-than a second service because at a handful of findings a night there is nothing
-for a second service to do except fail separately.
+The loop is an asyncio task rather than a second service because at a handful
+of findings a night, a second service has nothing to do but fail separately.
 """
 
 from __future__ import annotations
@@ -22,30 +21,30 @@ from shared.devin import DevinClient
 from shared.github import GitHubClient
 
 from . import metrics as metrics_mod
-from .reconcile import Reconciler
 from .store import Store
+from .watch import Watcher
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
-def build_reconciler(store: Store) -> Reconciler:
+def build_watcher(store: Store) -> Watcher:
     if missing := config.missing():
         raise SystemExit(f"missing required configuration: {', '.join(missing)} (export them before starting)")
     devin = DevinClient(config.devin_api_key, config.devin_org_id, config.devin_api_base)
     github = GitHubClient(config.github_token, config.repo, config.github_api_base)
-    return Reconciler(store, devin, github, config)
+    return Watcher(store, devin, github, config)
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="Superset remediation control plane")
+    app = FastAPI(title="Superset remediation tracker")
     store = Store(config.db_path)
-    reconciler = build_reconciler(store)
+    watcher = build_watcher(store)
     app.state.store = store
-    app.state.reconciler = reconciler
+    app.state.watcher = watcher
 
     async def loop() -> None:
         while True:
-            await asyncio.to_thread(reconciler.cycle)
+            await asyncio.to_thread(watcher.cycle)
             await asyncio.sleep(config.poll_interval_seconds)
 
     @app.on_event("startup")
@@ -91,18 +90,18 @@ def create_app() -> FastAPI:
 
     @app.get("/healthz")
     def healthz() -> Any:
-        age = current_metrics()["last_reconciled_seconds_ago"]
+        age = current_metrics()["last_checked_seconds_ago"]
         stale = age is None or age > config.poll_interval_seconds * 4
-        # A dashboard that has stopped reconciling is worse than one that is
-        # down, because it looks fine. Say so rather than lying.
+        # A dashboard that has stopped updating is worse than one that is down,
+        # because it still looks fine.
         return JSONResponse(
-            {"ok": not stale, "last_reconciled_seconds_ago": age, "repo": config.repo},
+            {"ok": not stale, "last_checked_seconds_ago": age, "repo": config.repo},
             status_code=200 if not stale else 503,
         )
 
-    @app.post("/reconcile")
-    def reconcile_now() -> Any:
-        return JSONResponse(reconciler.cycle())
+    @app.post("/check")
+    def check_now() -> Any:
+        return JSONResponse(watcher.cycle())
 
     return app
 

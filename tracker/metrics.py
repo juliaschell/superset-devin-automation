@@ -1,7 +1,7 @@
-"""Metrics, all derived from the event log and the task view.
+"""Metrics, derived from the event log and the task cache.
 
-Every definition here is a judgement about what counts as success, so each one
-says what it measures and what it deliberately excludes.
+What counts as success is a judgement, so each definition says what it excludes
+as well as what it counts.
 """
 
 from __future__ import annotations
@@ -37,7 +37,7 @@ def compute(store: Store) -> dict[str, Any]:
     # rates rather than counted as a failure.
     settled = [t for t in tasks if t.get("outcome") or t.get("rejected")]
 
-    # Autonomy: reached a verified PR without pulling a human in. Measured over
+    # Autonomy: a verified PR with no human pulled in. The denominator is
     # everything that settled *or* needed a human — over successes alone it
     # reads ~100% and means nothing.
     needed_human = [
@@ -84,10 +84,9 @@ def compute(store: Store) -> dict[str, Any]:
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # Cost is reported only where it was measured. Per-session ACUs come from
-    # the consumption API via the reconciler, which serves Enterprise accounts
-    # only — below that plan no task carries ACUs, and rather than substitute a
-    # typed-in figure or a zero, the section is absent everywhere it would show.
+    # Reported only where the consumption API measured it (Enterprise only).
+    # Below that plan no task carries ACUs and the section disappears, rather
+    # than showing a zero that would read as free work.
     run = round(sum(t.get("acus") or 0.0 for t in tasks), 2) or None
     cost = (
         {
@@ -99,8 +98,8 @@ def compute(store: Store) -> dict[str, Any]:
         else None
     )
 
-    last = store.get_meta("last_reconciled")
-    last_reconciled_age = round(time.time() - float(last), 1) if last else None
+    last = store.get_meta("last_checked")
+    last_checked_age = round(time.time() - float(last), 1) if last else None
 
     return {
         "totals": {
@@ -111,20 +110,18 @@ def compute(store: Store) -> dict[str, Any]:
             "settled": len(settled),
         },
         "funnel": {stage: funnel.get(stage, 0) for stage in STAGES},
-        # Success is a *verified* PR, not "the session finished". A session
-        # ending on a red build is not a success.
+        # A verified PR, not a finished session: ending on a red build is not
+        # a success.
         "success_rate": _rate(len(verified), len(settled)),
         "autonomy_rate": _rate(len(autonomous), len(autonomy_denominator)),
         "human_rejection_rate": _rate(len(rejected), len(settled)),
         "verification_pass_rate": _rate(
             len([t for t in tasks if t.get("validation_passed") == 1]), len(with_pr)
         ),
-        # A fix whose validation command differs from the one its class file
-        # specifies. Not necessarily wrong — but it is the difference between a
-        # curated gate and an improvised one, so it is never hidden.
+        # Fixes graded by a command their class file did not specify.
         "validation_mismatches": len([t for t in tasks if _validation_mismatch(t)]),
-        # Averaged over dispatched issues, not over everything detected: an
-        # issue nobody has worked yet is not an issue that took zero attempts.
+        # Over dispatched issues only: an issue nobody has worked yet did not
+        # take zero attempts.
         "attempts_per_issue": round(sum(attempts) / len(attempts), 2)
         if attempts
         else 0,
@@ -134,17 +131,15 @@ def compute(store: Store) -> dict[str, Any]:
         "failure_taxonomy": failure_taxonomy,
         "per_class": per_class,
         "cost": cost,
-        "last_reconciled_seconds_ago": last_reconciled_age,
+        "last_checked_seconds_ago": last_checked_age,
     }
 
 
 def _validation_mismatch(task: dict[str, Any]) -> bool:
     """Did the fix run a gate other than the one its class file specifies?
 
-    A class file writes its command as a template — ``grep ... <files>`` — and
-    the session fills the placeholder with the paths it touched. Substituting a
-    placeholder is the command being used as intended; anything else is a
-    session grading its own homework, which is the case worth counting.
+    Filling in a placeholder (``grep ... <files>``) is the command being used as
+    intended. Anything else is a session grading its own homework.
     """
     ran, registry = task.get("validate_command"), task.get("validate_registry")
     if not ran or not registry:
@@ -185,9 +180,8 @@ def prometheus(metrics: dict[str, Any]) -> str:
     emit("remediation_validation_mismatches", metrics["validation_mismatches"])
     emit("remediation_attempts_per_issue", metrics["attempts_per_issue"])
     emit("remediation_median_time_to_pr_seconds", metrics["median_time_to_pr_seconds"])
-    emit("remediation_last_reconciled_seconds", metrics["last_reconciled_seconds_ago"])
-    # Absent rather than zero when the plan does not expose consumption: a
-    # scrape that never sees the series is clearer than one reporting free work.
+    emit("remediation_last_check_seconds", metrics["last_checked_seconds_ago"])
+    # Absent rather than zero when the plan does not expose consumption.
     if metrics["cost"]:
         emit("remediation_run_acus", metrics["cost"]["run_acus"])
         emit("remediation_acus_per_merged_pr", metrics["cost"]["acus_per_merged_pr"])
@@ -201,8 +195,8 @@ def prometheus(metrics: dict[str, Any]) -> str:
 
 
 def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str) -> str:
-    """The honest write-up. Methodology first, because the numbers mean nothing
-    without the sample size."""
+    """The write-up, methodology first: the rates mean nothing without the
+    sample size they were taken over."""
     t = metrics["totals"]
     cost = metrics["cost"]
 

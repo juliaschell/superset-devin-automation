@@ -30,6 +30,13 @@ class FakeDevin:
         out = session.get("structured_output")
         return out if isinstance(out, dict) else {}
 
+    def session_acus(self, session_id: str) -> float | None:
+        for session in self._sessions:
+            if session.get("session_id") == session_id:
+                acus = session.get("acus_consumed")
+                return float(acus) if isinstance(acus, int | float) else None
+        return None
+
 
 class FakeGitHub:
     def __init__(self, issues: dict[str, list[dict[str, Any]]] | None = None) -> None:

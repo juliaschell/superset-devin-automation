@@ -145,7 +145,9 @@ def task_update_from_session(session: dict[str, Any]) -> dict[str, Any]:
         "outcome": out.get("outcome"),
         "pr_url": pr_url_for(session),
         # Measured, not configured: the run-cost half of the payback figure is
-        # whatever the sessions actually burned.
+        # whatever the sessions actually burned, per the consumption API. The
+        # reconciler substitutes that for the session object's own field, which
+        # reads zero regardless.
         "acus": session.get("acus_consumed"),
     }
     if "validation_passed" in out:
@@ -260,7 +262,11 @@ class Reconciler:
         """What Devin is doing about it. One call for every in-flight session."""
         sessions = self.devin.list_sessions(tags=[self.config.session_tag])
         for session in sessions:
-            session = {**session, "structured_output": self.devin.report(session)}
+            session = {
+                **session,
+                "structured_output": self.devin.report(session),
+                "acus_consumed": self.devin.session_acus(str(session.get("session_id") or "")),
+            }
             session_id = session.get("session_id")
             number = issue_number_for(session)
             if number is None:

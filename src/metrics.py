@@ -84,12 +84,10 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # The v3 session object has an ``acus_consumed`` field and it reads 0.0 on
-    # every session this system has observed, finished ones included — the
-    # platform does not populate it for automation-spawned sessions. So a summed
-    # zero is an absent measurement, not a free run, and is never shown as one:
-    # the figure falls back to whatever was read off the org usage page and says
-    # which of the two it is.
+    # Run cost comes from the consumption API, per session, via the reconciler.
+    # Where that returns no rows the task carries no ACUs at all rather than a
+    # zero, so a summed zero here means unmeasured, not free, and is never shown
+    # as free: the figure falls back to a configured one and says which it is.
     measured_acus = round(sum(t.get("acus") or 0.0 for t in tasks), 2)
     run = measured_acus or run_acus or None
     cost = {
@@ -97,13 +95,11 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         "run_acus": run,
         "acus_per_merged_pr": round(run / len(merged), 2) if run and merged else None,
         "acus_per_issue_detected": round(run / total, 2) if run and total else None,
-        "source": "measured per session via the v3 API"
+        "source": "measured per session via the v3 consumption API"
         if measured_acus
-        else "read off the org usage page — the API reports acus_consumed as 0.0 for "
-        "automation-spawned sessions"
+        else "configured — the consumption API returns no rows for this org's sessions"
         if run
-        else "unavailable — the API reports acus_consumed as 0.0 for automation-spawned "
-        "sessions and exposes no usage endpoint",
+        else "not available — the consumption API returns no rows for this org's sessions",
     }
 
     last = store.get_meta("last_reconciled")

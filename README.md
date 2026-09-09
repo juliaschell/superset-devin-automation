@@ -172,14 +172,20 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
-- **Cost is reported as "not available" rather than as zero.** The v3 session
-  object has an `acus_consumed` field, the reconciler sums it, and it reads
-  `0.0` on every session observed here — finished ones included. The platform
-  does not populate it for automation-spawned sessions, and there is no usage or
-  billing endpoint (both 404). A summed zero is therefore an absent measurement,
-  not a free run, so the dashboard prints `—` and names the reason. Supply
-  `RUN_ACUS` from the org usage page and it is shown as read-off-the-UI, which
-  is what it is. Build spend is a declared figure for the same reason: the
+- **Cost is read from the billing surface, and reads as "not available" rather
+  than as zero.** Run spend is fetched per session from
+  `GET /v3/organizations/{org}/consumption/daily/sessions/{session_id}` — the
+  endpoint the usage dashboard is built on — not from the session object's
+  `acus_consumed` field, which reads `0.0` for every session observed here.
+  On this org that call authorizes and returns `total_acus: 0.0` with an empty
+  `consumption_by_date`, because **the consumption API is documented as
+  Enterprise-only**: Teams and self-serve accounts get no rows, and the
+  enterprise-scoped variant `403`s. That is a plan boundary, not a defect and
+  not a zero. An empty series is therefore treated as *unknown*: the task stores
+  no ACUs, the dashboard prints `—`, and the source line says why. On an
+  Enterprise account the same code path reports measured per-session cost with
+  no changes. Set `RUN_ACUS` to a figure read off the usage page and it is
+  labelled configured. Build spend is declared for a different reason — the
   sessions that produced this system carry no tag that separates them.
 
 No outcome is fabricated in either direction — no engineered failures, no

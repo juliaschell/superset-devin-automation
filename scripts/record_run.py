@@ -48,10 +48,18 @@ def main() -> int:
             if not i.get("pull_request")
         ]
         pull_requests = {}
-        # Bake each session's report into the frame. Offline replay has no API
-        # to ask, and ``structured_output`` arrives null — so if the report is
-        # not resolved here, the recording remembers only that a session ran.
-        sessions = [{**s, "structured_output": devin.report(s)} for s in sessions]
+        # Bake each session's report and cost into the frame. Offline replay
+        # has no API to ask, and both arrive empty on the session object — so if
+        # they are not resolved here, the recording remembers only that a
+        # session ran.
+        sessions = [
+            {
+                **s,
+                "structured_output": devin.report(s),
+                "acus_consumed": devin.session_acus(str(s.get("session_id") or "")),
+            }
+            for s in sessions
+        ]
         for session in sessions:
             out = session.get("structured_output") or {}
             url = out.get("pr_url") if isinstance(out, dict) else None

@@ -39,9 +39,10 @@ class Config:
     session_timeout_seconds: int = field(default_factory=lambda: _int("SESSION_TIMEOUT_SECONDS", 3 * 3600))
     ready_label: str = field(default_factory=lambda: _env("READY_LABEL", "devin:ready"))
     rejected_label: str = field(default_factory=lambda: _env("REJECTED_LABEL", "devin:rejected"))
-    # ACUs are not exposed per session by the API for this org (see README,
-    # "Cost accounting"). These are read off the org usage page and recorded so
-    # the payback figure is reproducible rather than remembered.
+    # Fallbacks for when the consumption API returns no rows, which it does for
+    # any account below Enterprise (see README, "Cost accounting"). Read off the
+    # usage page and recorded here so the payback figure is reproducible rather
+    # than remembered, and labelled as configured wherever it is shown.
     build_acus: float = field(default_factory=lambda: float(_env("BUILD_ACUS", "0") or 0))
     run_acus: float = field(default_factory=lambda: float(_env("RUN_ACUS", "0") or 0))
 

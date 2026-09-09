@@ -13,6 +13,11 @@ created with a schema attached, and the API rejects a schema on a session an
 automation spawns — so for every session this system observes it is ``null``,
 and the prompt asks for the same JSON in the final message instead. ``report``
 reads it from whichever of the two is present.
+
+Cost has the same shape of problem. ``acus_consumed`` on the session object
+reads ``0.0`` for every session here, so ``session_acus`` asks the billing
+surface instead — ``consumption/daily/sessions/{id}``, which is the endpoint
+the usage dashboard is built on.
 """
 
 from __future__ import annotations
@@ -96,6 +101,30 @@ class DevinClient:
                 if isinstance(parsed, dict):
                     return parsed
         return {}
+
+    def session_acus(self, session_id: str) -> float | None:
+        """What the session cost, from the billing surface rather than the session.
+
+        ``acus_consumed`` on the session object reads ``0.0`` even for sessions
+        that plainly did work, so the authoritative figure is the consumption
+        API — the same data the usage dashboard shows, keyed by session, ACUs
+        attributed to the day they were burned.
+
+        Returns ``None`` when the org reports no consumption rows at all, which
+        is a different statement from zero: ``0.0`` would claim the session was
+        free, and nothing here is entitled to claim that. Below the Enterprise
+        plan the endpoint answers but returns an empty series, so ``None`` is
+        the usual answer for a self-serve account.
+        """
+        ident = session_id if session_id.startswith("devin-") else f"devin-{session_id}"
+        try:
+            data = self._request("GET", self._org_path(f"consumption/daily/sessions/{ident}"))
+        except DevinError:
+            return None
+        if not isinstance(data, dict) or not data.get("consumption_by_date"):
+            return None
+        total = data.get("total_acus")
+        return float(total) if isinstance(total, int | float) else None
 
     # ------------------------------------------------------------ automations
 

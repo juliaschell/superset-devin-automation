@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.devin import DevinClient
+from src.devin import DevinClient, DevinError
 
 
 class Client(DevinClient):
@@ -65,3 +65,42 @@ def test_a_session_that_answered_in_prose_is_not_an_error() -> None:
 def test_malformed_json_is_skipped_rather_than_raised() -> None:
     client = Client([{"message": '```json\n{"outcome": oops}\n```'}])
     assert client.report(session()) == {}
+
+
+class ConsumptionClient(DevinClient):
+    """A client whose only I/O is a canned consumption response."""
+
+    def __init__(self, payload: Any, error: bool = False) -> None:
+        super().__init__("key", "org")
+        self.payload = payload
+        self.error = error
+        self.paths: list[str] = []
+
+    def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+        self.paths.append(path)
+        if self.error:
+            raise DevinError("403")
+        return self.payload
+
+
+def test_reads_the_session_cost_from_the_consumption_api() -> None:
+    client = ConsumptionClient(
+        {"total_acus": 4.25, "consumption_by_date": [{"date": 1, "acus": 4.25}]}
+    )
+    assert client.session_acus("s1") == 4.25
+    assert client.paths == ["/v3/organizations/org/consumption/daily/sessions/devin-s1"]
+
+
+def test_the_session_id_is_only_prefixed_once() -> None:
+    client = ConsumptionClient({"total_acus": 1.0, "consumption_by_date": [{"acus": 1.0}]})
+    client.session_acus("devin-s1")
+    assert client.paths == ["/v3/organizations/org/consumption/daily/sessions/devin-s1"]
+
+
+def test_no_consumption_rows_is_unknown_rather_than_free() -> None:
+    client = ConsumptionClient({"total_acus": 0.0, "consumption_by_date": []})
+    assert client.session_acus("s1") is None
+
+
+def test_an_unreadable_billing_surface_does_not_break_the_cycle() -> None:
+    assert ConsumptionClient(None, error=True).session_acus("s1") is None

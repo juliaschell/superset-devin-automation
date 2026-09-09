@@ -1,1 +1,1 @@
-"""The remediation automation: its Devin definition, prompt and playbook."""
+"""The remediation automation (Devin definition, prompt, playbook, output schema)"""

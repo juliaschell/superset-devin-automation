@@ -1,1 +1,1 @@
-"""API clients and configuration used by both the automations and the tracker."""
+"""API clients and configuration used by multiple systems (bootstrap, scanner, remediator, and/or tracker"""

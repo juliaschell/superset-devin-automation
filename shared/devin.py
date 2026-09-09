@@ -1,4 +1,4 @@
-"""Devin API client — all of it the v3 organization API.
+"""Devin API client — v3 API.
 
 ``/v1/sessions`` is the personal surface and rejects a service key, so it is not
 a fallback. v3 is the better surface anyway: one call per cycle returns every

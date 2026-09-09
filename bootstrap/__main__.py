@@ -38,27 +38,6 @@ LABELS = [
 ]
 
 
-def existing_fork_hint(github: GitHubClient, repo: str, upstream: str) -> str:
-    """Why the requested name never appeared.
-
-    An account gets one fork of a given upstream, and asking for a second one
-    returns the first instead of creating it — so the usual cause is a fork
-    already sitting under another name.
-    """
-    owner = repo.split("/")[0]
-    sibling = f"{owner}/{upstream.split('/')[1]}"
-    try:
-        if (github.repository(sibling).get("parent") or {}).get("full_name") == upstream:
-            return (
-                f"{owner} already forks {upstream} as {sibling}, and GitHub will not make "
-                f"a second one, so {repo} was never created. Re-run with REPO={sibling}, "
-                f"or rename {sibling} first"
-            )
-    except GitHubError:
-        pass
-    return f"{repo} did not appear after two minutes; re-run once GitHub finishes"
-
-
 def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     """Make the fork exist and be usable. Returns what could not be fixed."""
     try:
@@ -66,9 +45,21 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     except GitHubError:
         print(f"+ forking {upstream} → {repo}; Superset is large, so this takes a few minutes")
         try:
-            github.fork(upstream)
+            created = github.fork(upstream)
         except GitHubError as exc:
             return [f"cannot fork {upstream} to {repo}: {exc}"]
+
+        # An account may hold one fork of an upstream, whatever it is called;
+        # a second request quietly hands back the first, under its own name.
+        landed = created.get("full_name") if isinstance(created, dict) else None
+        if landed and landed != repo:
+            owner = repo.split("/")[0]
+            return [
+                f"{owner} already forks {upstream} as {landed}. GitHub allows one fork of a "
+                f"repo per account whatever it is named, so it returned that one and "
+                f"{repo} was never created. Re-run with REPO={landed}, or rename or "
+                f"delete {landed} first"
+            ]
         # GitHub forks asynchronously and says nothing while it works, so say
         # it here: silence for minutes is indistinguishable from a hang.
         for attempt in range(1, 31):
@@ -80,7 +71,7 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
                 if attempt % 5 == 0:
                     print(f"  still forking, {attempt * 4}s elapsed")
         else:
-            return [existing_fork_hint(github, repo, upstream)]
+            return [f"{repo} did not appear after two minutes; re-run once GitHub finishes"]
         print(f"+ {repo} exists")
 
     # Write access is proved by attempting a write, never by reading

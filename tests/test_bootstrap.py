@@ -21,19 +21,15 @@ class FakeGitHub:
         info: dict[str, Any] | None,
         files: set[str] | None = None,
         can_write: bool = True,
-        others: dict[str, dict[str, Any]] | None = None,
+        forks_as: str | None = None,
     ) -> None:
         self.info = info
-        self.others = others or {}
+        self.forks_as = forks_as
         self.files = files or set()
         self.can_write = can_write
         self.calls: list[str] = []
 
-    def repository(self, full_name: str | None = None) -> dict[str, Any]:
-        if full_name is not None:
-            if full_name not in self.others:
-                raise GitHubError("404")
-            return self.others[full_name]
+    def repository(self) -> dict[str, Any]:
         if self.info is None:
             raise GitHubError("404")
         return self.info
@@ -44,10 +40,12 @@ class FakeGitHub:
         self.calls.append("enable_issues")
         self.info = {**(self.info or {}), "has_issues": True}
 
-    def fork(self, upstream: str) -> None:
+    def fork(self, upstream: str) -> dict[str, Any]:
         self.calls.append(f"fork:{upstream}")
-        if not self.others:  # a first fork of this upstream lands under the asked-for name
-            self.info = {"has_issues": False}
+        if self.forks_as:  # the account's existing fork, handed back instead
+            return {"full_name": self.forks_as}
+        self.info = {"has_issues": False}
+        return {"full_name": "me/superset"}
 
     def file_exists(self, path: str) -> bool:
         return path in self.files
@@ -77,18 +75,13 @@ def test_a_missing_repo_is_forked(monkeypatch: pytest.MonkeyPatch):
     assert github.calls[:2] == ["fork:apache/superset", "enable_issues"]
 
 
-def test_a_second_fork_of_the_same_upstream_says_which_one_to_use(
-    monkeypatch: pytest.MonkeyPatch,
-):
-    """GitHub returns the account's existing fork instead of making another."""
-    monkeypatch.setattr(bootstrap.time, "sleep", lambda _: None)
-    github = FakeGitHub(None, others={"me/superset": {"parent": {"full_name": "apache/superset"}}})
+def test_a_fork_that_lands_elsewhere_is_reported_at_once():
+    """One fork of an upstream per account: a second request returns the first,
+    so waiting for the requested name would burn two minutes to say nothing."""
+    github = FakeGitHub(None, forks_as="me/superset")
     problems = bootstrap.prepare_fork(github, "me/other-name", "apache/superset")
-    assert problems == [
-        "me already forks apache/superset as me/superset, and GitHub will not make "
-        "a second one, so me/other-name was never created. Re-run with REPO=me/superset, "
-        "or rename me/superset first"
-    ]
+    assert problems and "me already forks apache/superset as me/superset" in problems[0]
+    assert "REPO=me/superset" in problems[0]
 
 
 def test_an_existing_registry_is_never_overwritten():

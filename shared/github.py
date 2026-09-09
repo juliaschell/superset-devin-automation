@@ -37,8 +37,8 @@ class GitHubClient:
             raise GitHubError(f"{method} {path} → {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
 
-    def repository(self, full_name: str | None = None) -> dict[str, Any]:
-        return self._request("GET", f"/repos/{full_name or self.repo}")
+    def repository(self) -> dict[str, Any]:
+        return self._request("GET", f"/repos/{self.repo}")
 
     def enable_issues(self) -> Any:
         """Forks have Issues off by default, and the pipeline files issues."""
@@ -55,6 +55,10 @@ class GitHubClient:
         `organization` it lands under the token's own account — so asking for
         `you/anything-else` silently produces `you/superset`, and the wait for
         the requested name never ends.
+
+        The reply names the repo that was actually forked, which is not always
+        the one asked for: an account holds one fork of an upstream whatever it
+        is called, and a second request returns the first.
         """
         owner, _, name = self.repo.partition("/")
         payload: dict[str, Any] = {"name": name}

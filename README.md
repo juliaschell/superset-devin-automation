@@ -27,7 +27,9 @@ The system includes a Devin automation to scan for problems and a separate autom
 $ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TOKEN=<token>
 ```
 
-- `REPO` — the fork to work on, created for you if it does not exist yet
+- `REPO` — the fork to work on, created for you if it does not exist yet. GitHub
+  allows one fork of a repo per account, so if you already fork Superset, give
+  that name here
 - `DEVIN_KEY` — a Devin **service-user** key, Admin role
 - `DEVIN_ORG` — your Devin org id, `org-…`
 - `GITHUB_TOKEN` — the `repo` scope. Nothing here ever merges

@@ -117,9 +117,10 @@ command differed from the registry's.
 ### Offline, no credentials
 
 ```bash
-make install
-make demo        # http://localhost:8000
+POLL_INTERVAL_SECONDS=3 docker compose up --build   # http://localhost:8000
 ```
+
+Or without Docker: `make install && make demo`.
 
 Replays a recorded real run — the actual issues filed and the actual session
 objects returned — through the same reconciler and metrics code that runs live.
@@ -135,7 +136,7 @@ SCAN_WEBHOOK_SECRET=... make scan   # fire the scan now instead of waiting for 0
 MODE=live make run      # dashboard + reconcile loop
 ```
 
-Or `docker compose up --build`.
+Or `MODE=live docker compose up --build` with the same variables in `.env`.
 
 Prerequisites, all one-time:
 

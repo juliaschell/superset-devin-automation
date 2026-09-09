@@ -11,8 +11,6 @@ services:
       DEVIN_ORG_ID: ${DEVIN_ORG_ID:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       POLL_INTERVAL_SECONDS: ${POLL_INTERVAL_SECONDS:-30}
-      BUILD_ACUS: ${BUILD_ACUS:-0}
-      RUN_ACUS: ${RUN_ACUS:-0}
     volumes:
       - state:/data
 

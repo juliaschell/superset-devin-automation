@@ -116,15 +116,23 @@
       <div class="sub">Rejection rate is the signal to mute a class — a registry edit, not a code change.</div>
     </div>
     <div class="panel">
-      <h2>Cost</h2>
+      <h2>{% if metrics.cost %}Cost and pace{% else %}Pace{% endif %}</h2>
       <table>
-        <tr><td>build (planning + implementation)</td><td>{% if metrics.cost.build_acus %}{{ metrics.cost.build_acus }} ACU{% else %}—{% endif %}</td></tr>
-        <tr><td>run</td><td>{% if metrics.cost.run_acus %}{{ metrics.cost.run_acus }} ACU{% else %}—{% endif %}</td></tr>
+        {% if metrics.cost %}
+        <tr><td>run</td><td>{{ metrics.cost.run_acus }} ACU</td></tr>
         <tr><td>per merged PR</td><td>{{ metrics.cost.acus_per_merged_pr or '—' }}</td></tr>
         <tr><td>per issue detected</td><td>{{ metrics.cost.acus_per_issue_detected or '—' }}</td></tr>
+        {% endif %}
         <tr><td>median time to PR</td><td>{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>
       </table>
-      <div class="sub">{{ metrics.cost.source }}.</div>
+      <div class="sub">
+        {% if metrics.cost %}
+          Measured per session via the v3 consumption API.
+        {% else %}
+          ACUs are omitted: the consumption API serves Enterprise accounts only,
+          and a cost this system cannot measure is not one it reports.
+        {% endif %}
+      </div>
     </div>
   </section>
 

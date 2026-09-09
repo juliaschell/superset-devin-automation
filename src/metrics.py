@@ -19,13 +19,7 @@ def _median(values: list[float]) -> float | None:
     return round(statistics.median(values), 1) if values else None
 
 
-def _acus(value: float | None) -> str:
-    """An unmeasured cost says so. Rendering it as ``0 ACUs`` would be the one
-    lie this report cannot afford."""
-    return f"{value} ACUs" if value else "not available"
-
-
-def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dict[str, Any]:
+def compute(store: Store) -> dict[str, Any]:
     tasks = store.tasks()
     total = len(tasks)
     funnel = store.furthest_stages()
@@ -84,23 +78,20 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # Run cost comes from the consumption API, per session, via the reconciler.
-    # Where that returns no rows the task carries no ACUs at all rather than a
-    # zero, so a summed zero here means unmeasured, not free, and is never shown
-    # as free: the figure falls back to a configured one and says which it is.
-    measured_acus = round(sum(t.get("acus") or 0.0 for t in tasks), 2)
-    run = measured_acus or run_acus or None
-    cost = {
-        "build_acus": build_acus or None,
-        "run_acus": run,
-        "acus_per_merged_pr": round(run / len(merged), 2) if run and merged else None,
-        "acus_per_issue_detected": round(run / total, 2) if run and total else None,
-        "source": "measured per session via the v3 consumption API"
-        if measured_acus
-        else "configured — the consumption API returns no rows for this org's sessions"
+    # Cost is reported only where it was measured. Per-session ACUs come from
+    # the consumption API via the reconciler, which serves Enterprise accounts
+    # only — below that plan no task carries ACUs, and rather than substitute a
+    # typed-in figure or a zero, the section is absent everywhere it would show.
+    run = round(sum(t.get("acus") or 0.0 for t in tasks), 2) or None
+    cost = (
+        {
+            "run_acus": run,
+            "acus_per_merged_pr": round(run / len(merged), 2) if merged else None,
+            "acus_per_issue_detected": round(run / total, 2) if total else None,
+        }
         if run
-        else "not available — the consumption API returns no rows for this org's sessions",
-    }
+        else None
+    )
 
     last = store.get_meta("last_reconciled")
     last_reconciled_age = round(time.time() - float(last), 1) if last else None
@@ -177,6 +168,11 @@ def prometheus(metrics: dict[str, Any]) -> str:
     emit("remediation_attempts_per_issue", metrics["attempts_per_issue"])
     emit("remediation_median_time_to_pr_seconds", metrics["median_time_to_pr_seconds"])
     emit("remediation_last_reconciled_seconds", metrics["last_reconciled_seconds_ago"])
+    # Absent rather than zero when the plan does not expose consumption: a
+    # scrape that never sees the series is clearer than one reporting free work.
+    if metrics["cost"]:
+        emit("remediation_run_acus", metrics["cost"]["run_acus"])
+        emit("remediation_acus_per_merged_pr", metrics["cost"]["acus_per_merged_pr"])
     for reason, count in metrics["failure_taxonomy"].items():
         emit("remediation_failures_total", count, f'{{reason="{reason}"}}')
     for name, bucket in metrics["per_class"].items():
@@ -204,7 +200,8 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         f"- Settled (outcome known): **{t['settled']}**; still in flight: **{t['detected'] - t['settled']}**",
         "- Success means a PR whose classification's validation command passed — not 'the session finished'.",
         "- No PR is auto-merged; the merged count reflects human decisions only.",
-        f"- ACU figures: {cost['source']}.",
+        "- Cost is reported only where the consumption API measured it, which "
+        "requires an Enterprise account; otherwise there is no cost section.",
         "",
         "## Outcomes",
         "",
@@ -240,14 +237,17 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
             f"| {name} | {bucket['volume']} | {pct(bucket['success_rate'])} | {pct(bucket['rejection_rate'])} |"
         )
 
+    if cost:
+        lines += [
+            "",
+            "## Cost",
+            "",
+            f"- Run: **{cost['run_acus']} ACUs**",
+            f"- Per merged PR: **{cost['acus_per_merged_pr']} ACUs**",
+            f"- Per issue detected: **{cost['acus_per_issue_detected']} ACUs**",
+        ]
+
     lines += [
-        "",
-        "## Cost",
-        "",
-        f"- Build (planning + implementation sessions): **{_acus(cost['build_acus'])}**",
-        f"- Run: **{_acus(cost['run_acus'])}**",
-        f"- Per merged PR: **{_acus(cost['acus_per_merged_pr'])}**",
-        f"- Per issue detected: **{_acus(cost['acus_per_issue_detected'])}**",
         "",
         "## Tasks",
         "",

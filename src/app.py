@@ -63,7 +63,7 @@ def create_app() -> FastAPI:
                 await task
 
     def current_metrics() -> dict[str, Any]:
-        return metrics_mod.compute(store, config.build_acus, config.run_acus)
+        return metrics_mod.compute(store)
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request) -> Any:

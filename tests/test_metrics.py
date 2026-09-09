@@ -73,22 +73,38 @@ def test_per_class_rates(tmp_path):
     assert metrics["per_class"]["frontend-any"]["rejection_rate"] == 50.0
 
 
-def test_cost_is_reported_per_merged_pr(tmp_path):
-    metrics = compute(seed(tmp_path), build_acus=120, run_acus=30)
+def test_cost_is_reported_per_merged_pr_when_measured(tmp_path):
+    store = seed(tmp_path)
+    for issue, acus in ((1, 12.0), (2, 10.0), (3, 8.0)):
+        store.upsert_task(issue, acus=acus)
+    metrics = compute(store)
+    assert metrics["cost"]["run_acus"] == 30.0
     assert metrics["cost"]["acus_per_merged_pr"] == 30.0
     assert metrics["cost"]["acus_per_issue_detected"] == 7.5
+    assert "## Cost" in report_markdown(metrics, store.tasks(), "o/r")
+    assert "remediation_run_acus 30.0" in prometheus(metrics)
+
+
+def test_cost_is_omitted_when_the_plan_exposes_no_consumption(tmp_path):
+    """The consumption API is Enterprise-only; below it nothing is measured, and
+    an unmeasured cost is not reported as zero, as a dash, or from config."""
+    store = seed(tmp_path)
+    metrics = compute(store)
+    assert metrics["cost"] is None
+    assert "## Cost" not in report_markdown(metrics, store.tasks(), "o/r")
+    assert "acus" not in prometheus(metrics)
 
 
 def test_rates_are_none_not_zero_when_there_is_no_data(tmp_path):
     """Zero would read as a real measurement of failure."""
     metrics = compute(Store(str(tmp_path / "empty.db")))
     assert metrics["success_rate"] is None
-    assert metrics["cost"]["acus_per_merged_pr"] is None
+    assert metrics["cost"] is None
 
 
 def test_prometheus_and_report_render(tmp_path):
     store = seed(tmp_path)
-    metrics = compute(store, build_acus=120, run_acus=30)
+    metrics = compute(store)
     text = prometheus(metrics)
     assert 'remediation_funnel_total{stage="merged"} 1' in text
     assert "remediation_success_rate 33.3" in text

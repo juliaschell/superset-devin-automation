@@ -172,8 +172,8 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
-- **Cost is read from the billing surface, and reads as "not available" rather
-  than as zero.** Run spend is fetched per session from
+- **Cost is measured or it is absent — never typed in, never zero.** Run spend
+  is fetched per session from
   `GET /v3/organizations/{org}/consumption/daily/sessions/{session_id}` — the
   endpoint the usage dashboard is built on — not from the session object's
   `acus_consumed` field, which reads `0.0` for every session observed here.
@@ -181,12 +181,13 @@ Definitions are choices, so they are stated rather than implied:
   `consumption_by_date`, because **the consumption API is documented as
   Enterprise-only**: Teams and self-serve accounts get no rows, and the
   enterprise-scoped variant `403`s. That is a plan boundary, not a defect and
-  not a zero. An empty series is therefore treated as *unknown*: the task stores
-  no ACUs, the dashboard prints `—`, and the source line says why. On an
-  Enterprise account the same code path reports measured per-session cost with
-  no changes. Set `RUN_ACUS` to a figure read off the usage page and it is
-  labelled configured. Build spend is declared for a different reason — the
-  sessions that produced this system carry no tag that separates them.
+  not a zero. An empty series is treated as unmeasured, and unmeasured cost is
+  not reported at all: the ACU rows vanish from the dashboard, the report has no
+  Cost section, and `/metrics` emits no ACU series. On an Enterprise account the
+  same code path reports measured per-session cost with no changes. There is
+  deliberately no `RUN_ACUS` knob — a figure read off a usage page by hand is a
+  claim about spend this system did not measure, and would sit in the report
+  indistinguishable from one it did.
 
 No outcome is fabricated in either direction — no engineered failures, no
 flattering denominators. Sample size is printed above every rate in the report.

@@ -1,13 +1,9 @@
 # Superset remediation
 
-A nightly automation that finds real problems in a fork of
-[Apache Superset](https://github.com/apache/superset), fixes them, proves the fix
-with a command a human chose, and opens a pull request for a human to judge.
+A nightly automation that finds problem classes in a fork of
+[Apache Superset](https://github.com/apache/superset), files real git bugs, fixes them, proves the fix with a human-approved validation command, and opens a PR with the proposed fix.
 
-Two Devin Automations do the work: one scans, one remediates. A small service —
-one process, one container, one SQLite file — watches what happened and reports
-on it. What counts as a problem is not hardcoded: it lives as markdown in the
-fork, and a human owns it.
+The system includes a Devin automation to scan for problems and a separate automation to remdiate the problems. An external service polls both processes and records data and metrics in an SQLite file. 
 
 **No pull request is ever merged automatically.**
 
@@ -21,12 +17,12 @@ fork, and a human owns it.
 
 - a **service-user** API key with the Admin role —
   https://app.devin.ai/settings/org-service-users 
-- A GitHub API token 
+- A GitHub API token <fill in link or click-instructions here> 
 
 2. Stand up the container:
 
 ```bash
-make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_name> GITHUB_TOKEN=<token>
+$ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_name> GITHUB_TOKEN=<token>
 ```
 
 - `REPO` — the fork to work on, created for you if it does not exist yet
@@ -43,19 +39,24 @@ If needed, bootstrap will print a link for you to enable label and review events
 4. Start the scanner by hand: 
 
 ```bash
-make scan
+$ make scan
 ```
 
 If not manually kicked, it would run automatically at 2:00PT
 
-The scanner will create git issues, and the remediation automation will start automatically to post PRs
+The scanner will create git issues which will trigger the remediation automation to post fix PRs
 
 A metrics dashboard will be available at http://localhost:8000
 
-5. Review PRs 
+5. Merge 1+ classifications
 
-The first scan will find the classification directory empty, so it will not file bugs. It will propose some new classifications. These PRs must be reviewed, modified as desired, and merged. There must be at least 1 active classification for the scanner to be able to file new bugs. 
+The first scan will find the classification directory empty, so it will not file bugs. It will propose some new classifications in your fork repo. These PRs must be reviewed, modified as desired, and merged. There must be at least 1 active classification for the scanner to be able to file new bugs. 
 
+6. Continue the scanning loop 
+
+```bash
+$ make scan
+```
 Each following scan will file bugs according to the existing classifications, and may propose new classification PRs to review. 
 
 ---
@@ -150,7 +151,7 @@ Proposals are written to be merged unchanged (state, settings, validation comman
 | yes, but not yet | change `status: active` to `muted`, then merge |
 | no | move the file to `_declined/`, set `status: declined`, add a `## Why declined` section, merge |
 
-Decline suggested classifications **by setting the status and moving to declined folder**, not by closing the PR or removing the file. Closing is not a signal — the class will be proposed again next run. The classification directory is ground truth. 
+Decline suggested classifications **by setting the status and moving to declined folder**, not by closing the PR or removing the file. The classification directory is ground truth. Closing is not a signal — the class will be proposed again next run. 
 
 Editing a proposal before merging is always available. If proposals routinely
 need rewriting, that is a bug in the scan prompt, not a step in the process.

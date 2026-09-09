@@ -70,9 +70,8 @@ dashboard counts every run whose actual command differed from the registry's.
 README says so.
 
 **Q. Secrets.**
-Nothing but env vars; `.env` is gitignored and the recorded run committed for
-the offline demo was slimmed to the fields replay uses and scanned for
-credential patterns before commit.
+Nothing but env vars, and `.env` is gitignored. Nothing observed from a live run
+is committed, so there is no fixture to leak one.
 
 ---
 

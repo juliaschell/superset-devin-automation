@@ -55,6 +55,21 @@ def test_stage_never_moves_backwards(tmp_path):
     assert store.get_task(1)["stage"] == "pr_open"
 
 
+def test_a_caller_supplied_detection_time_wins(tmp_path):
+    """GitHub knows when the issue was filed; this database only knows when it
+    first looked, which on a fresh clone is minutes after a day-old cycle."""
+    store = make(tmp_path)
+    store.upsert_task(1, detected_at=1000.0)
+    assert store.get_task(1)["detected_at"] == 1000.0
+
+
+def test_a_known_timestamp_is_not_overwritten_by_the_clock(tmp_path):
+    store = make(tmp_path)
+    store.upsert_task(1, detected_at=1000.0, pr_opened_at=1200.0)
+    store.advance(1, "pr_open")
+    assert store.get_task(1)["pr_opened_at"] == 1200.0
+
+
 def test_events_are_append_only_history(tmp_path):
     store = make(tmp_path)
     store.log("detected", issue_number=1, detail="x")

@@ -200,9 +200,7 @@ def prometheus(metrics: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def report_markdown(
-    metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str, mode: str = "live"
-) -> str:
+def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str) -> str:
     """The honest write-up. Methodology first, because the numbers mean nothing
     without the sample size."""
     t = metrics["totals"]
@@ -222,15 +220,6 @@ def report_markdown(
         "- No PR is auto-merged; the merged count reflects human decisions only.",
         "- Cost is reported only where the consumption API measured it, which "
         "requires an Enterprise account; otherwise there is no cost section.",
-        *(
-            [
-                "- **Replay:** counts and outcomes are from a recorded real run. "
-                "Durations are omitted — replay's clock is a frame per cycle, not "
-                "the hours the run took."
-            ]
-            if mode != "live"
-            else []
-        ),
         "",
         "## Outcomes",
         "",
@@ -243,11 +232,7 @@ def report_markdown(
         f"| Validation-command mismatches | {metrics['validation_mismatches']} |",
         f"| Attempts per issue | {metrics['attempts_per_issue']} |",
         f"| Issues reworked at least once | {metrics['reworked_issues']} |",
-        *(
-            [f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |"]
-            if mode == "live"
-            else []
-        ),
+        f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |",
         f"| Merged by a human | {t['merged']} |",
         "",
         "## Funnel (cumulative — ever reached)",

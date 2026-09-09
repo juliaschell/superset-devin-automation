@@ -49,7 +49,7 @@ interesting part of this design, so it is explicit:
 | Concern | Owner | Why |
 |---|---|---|
 | Nightly schedule | Devin Automation (`schedule:recurring`) | native trigger |
-| Manual scan run | Devin Automation `webhook:incoming` trigger | there is no run-now endpoint, so the manual entry point is a second trigger rather than a button of ours |
+| Manual scan run | Devin Automation `github:issues` trigger on a `devin:scan` label | there is no run-now endpoint, and the webhook trigger's secret is issued once in the UI; a label is the manual entry point the same GitHub token can already reach |
 | GitHub event matching | Devin Automation triggers | `github:issues` + `github:pull_request_review`, with a conditions DSL |
 | Session dispatch | Devin Automation `start_session` | no webhook receiver, no HMAC, no dispatch loop |
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
@@ -114,40 +114,45 @@ command differed from the registry's.
 
 ## Running it
 
-### Offline, no credentials
+There is one mode: live, against your own fork and your own Devin org. Two
+commands, whether you run them or your Devin does.
 
 ```bash
-POLL_INTERVAL_SECONDS=3 docker compose up --build   # http://localhost:8000
+cp .env.example .env    # REPO, DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN
+docker compose up --build   # http://localhost:8000
 ```
 
-Or without Docker: `make install && make demo`.
+`docker compose up` bootstraps before it serves: it forks Superset if `REPO`
+does not exist yet, enables Issues, creates the labels, seeds an empty
+classification registry, and creates the playbook and both automations over
+REST, scoped to your fork. All of it is idempotent, so it runs on every start
+and a second run only prints what it found.
 
-Replays a recorded real run — the actual issues filed and the actual session
-objects returned — through the same reconciler and metrics code that runs live.
-Nothing offline is synthetic; see [`demo/README.md`](demo/README.md).
+Then `make scan` files a `devin:scan` issue to trigger the first run instead of
+waiting for 02:00 PT. The first scan finds no active classes and proposes some
+as a PR — merging it is what turns detection on.
 
-### Live
+### Or point your own Devin at it
 
-```bash
-cp .env.example .env    # fill in DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN
-make validate           # check both payloads against the platform's trigger catalogue
-make apply              # create/update both automations from automations/*.json
-SCAN_WEBHOOK_SECRET=... make scan   # fire the scan now instead of waiting for 02:00
-MODE=live make run      # dashboard + reconcile loop
-```
+Give Devin the repo and this prompt; [`AGENTS.md`](AGENTS.md) tells it the rest.
 
-Or `MODE=live docker compose up --build` with the same variables in `.env`.
+> Set up https://github.com/juliaschell/superset-devin-automation against a
+> fresh fork of Apache Superset in my org, run it, and show me the dashboard.
+> Follow its AGENTS.md. Never merge anything.
 
-Prerequisites, all one-time:
+It will ask for the same four values, which are the only inputs either path has.
 
-- A **service-user** API key. The `/v3/organizations/*` endpoints are
-  service-user RBAC — a personal key is rejected there. Needs
-  `ViewOrgAutomations`, `ManageOrgAutomations`, and `ViewOrgSessions`.
-- Devin's GitHub connection scoped to **All installed repos** — GitHub triggers
-  only fire on private repos by default, and the fork is public.
-- **Issues enabled** on the fork (GitHub disables them on forks).
-- The scan automation's **webhook secret**, for manual runs. The API returns it
-  as `null`, so it is copied once from the automation's page.
+### What you have to grant
+
+- A **service-user** API key with the Admin role. The `/v3/organizations/*`
+  endpoints are service-user RBAC — a personal key is rejected there:
+  https://app.devin.ai/settings/org-service-users
+- A **GitHub token** with `repo`, issues and pull-request write. Not merge.
+- **Devin's GitHub connection**, scoped to all installed repos, so label and
+  review events on a public fork reach the automations. This is the one step
+  no API exposes; bootstrap prints the link when it finishes.
+
+Without Docker: `make install && make bootstrap && make run`.
 
 ### Endpoints
 
@@ -178,12 +183,17 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
+- **Durations come from GitHub's timestamps**, not from this process's clock:
+  when the issue was filed and when the PR was opened or merged. A control plane
+  started after the work — which is exactly what happens on a fresh clone —
+  would otherwise report a day-long cycle as the few seconds between its own
+  first two observations.
 - **Cost is measured or it is absent — never typed in, never zero.** Run spend
   is fetched per session from
   `GET /v3/organizations/{org}/consumption/daily/sessions/{session_id}` — the
   endpoint the usage dashboard is built on — not from the session object's
   `acus_consumed` field, which reads `0.0` for every session observed here.
-  On this org that call authorizes and returns `total_acus: 0.0` with an empty
+  On a Teams org that call authorizes and returns `total_acus: 0.0` with an empty
   `consumption_by_date`, because **the consumption API is documented as
   Enterprise-only**: Teams and self-serve accounts get no rows, and the
   enterprise-scoped variant `403`s. That is a plan boundary, not a defect and
@@ -271,19 +281,20 @@ automations/          checked-in automation definitions — the source of truth
   schemas/            structured-output contracts
 playbooks/
   remediate.md        the remediation procedure, held by the platform
+registry/
+  README.md           the registry format, seeded into a fresh fork
 docs/
   devin-api.md        what the API was asked for, and what it actually does
   audit.md            four reviewers reading this system
 scripts/
   apply_playbooks.py     create/update the playbooks over REST
   apply_automations.py   validate (--check) or create/update over REST
-  run_scan.py            fire the scan now, natively
-  record_run.py          capture a live run for offline replay
+  bootstrap.py           fork setup + playbook + automations, in one idempotent pass
+  run_scan.py            fire a scan now, by labelling an issue
 src/
   reconcile.py        the only logic that matters; pure functions, testable
   metrics.py          every definition above, in code
   store.py            two tables, and why each exists
-  replay.py           offline mode
 tests/                including one that asserts we cannot merge
 ```
 

@@ -33,9 +33,11 @@ def test_scan_is_scheduled_and_manually_runnable():
     spec = render("scan", REPO, 8)
     triggers = spec["triggers"]
     assert any(t["event_type"] == "schedule:recurring" for t in triggers)
-    # There is no run-now endpoint (POST .../run is a 404), so the manual entry
-    # point is an inbound webhook trigger. Losing it loses the manual path.
-    assert any(t["event_type"] == "webhook:incoming" for t in triggers)
+    # There is no run-now endpoint (POST .../run is a 404) and the webhook
+    # trigger's secret is UI-only, so the manual entry point is a label the
+    # GitHub token can apply. Losing it loses the manual path.
+    manual = [t for t in triggers if t["event_type"] == "github:issues"]
+    assert manual and "devin:scan" in json.dumps(manual)
 
 
 def test_remediator_has_both_entry_points():

@@ -6,14 +6,14 @@ is a no-op that prints what it found. What it does, in order:
 
 1. forks Superset if the repo does not exist yet, and turns Issues on — forks
    have them off by default, and the whole pipeline files issues;
-2. creates the three labels the automations trigger on;
+2. creates the four labels the automations trigger on;
 3. seeds an empty classification registry, so the first scan has a format to
    follow and proposes classes instead of inventing one;
 4. creates or updates the remediation playbook and both automations over REST,
    scoped to this fork;
 5. optionally fires the first scan.
 
-    REPO=you/superset python -m scripts.bootstrap --scan
+    REPO=you/superset python -m bootstrap --scan
 
 Requires DEVIN_API_KEY (service user, Admin), DEVIN_ORG_ID and GITHUB_TOKEN.
 """
@@ -28,8 +28,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from scripts import apply_automations, apply_playbooks, run_scan  # noqa: E402
-from src.github import GitHubClient, GitHubError  # noqa: E402
+from bootstrap import automations, playbooks  # noqa: E402
+from scanner import run_now  # noqa: E402
+from shared.github import GitHubClient, GitHubError  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 REGISTRY = ".devin/classifications"
@@ -89,7 +90,7 @@ def seed_registry(github: GitHubClient) -> None:
         return
     github.put_file(
         f"{REGISTRY}/README.md",
-        (ROOT / "registry" / "README.md").read_text(),
+        (ROOT / "scanner" / "registry_seed.md").read_text(),
         "chore(devin): seed the classification registry",
     )
     print(f"+ {REGISTRY}/README.md committed")
@@ -111,7 +112,7 @@ def main() -> int:
         return 2
     for name in ("DEVIN_API_KEY", "DEVIN_ORG_ID", "GITHUB_TOKEN"):
         if not os.environ.get(name):
-            print(f"{name} is required; see .env.example", file=sys.stderr)
+            print(f"{name} is required; see the README", file=sys.stderr)
             return 2
 
     github = GitHubClient(os.environ["GITHUB_TOKEN"], args.repo)
@@ -127,10 +128,9 @@ def main() -> int:
     seed_registry(github)
 
     # Playbook first: the remediation automation's prompt references it by id.
-    if code := apply_playbooks.main():
+    if code := playbooks.main([]):
         return code
-    sys.argv = ["apply_automations", "--repo", args.repo]
-    if code := apply_automations.main():
+    if code := automations.main(["--repo", args.repo]):
         return code
 
     print(
@@ -139,7 +139,7 @@ def main() -> int:
     )
 
     if args.scan:
-        return run_scan.main()
+        return run_now.main()
     print("Then: `make scan` to run one now, or wait for the nightly. `make run` for the dashboard.")
     return 0
 

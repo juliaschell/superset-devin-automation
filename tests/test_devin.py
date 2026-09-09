@@ -12,7 +12,7 @@ from typing import Any
 
 import httpx
 
-from src.devin import DevinClient, DevinError
+from shared.devin import DevinClient, DevinError
 
 
 class Client(DevinClient):

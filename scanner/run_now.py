@@ -7,7 +7,7 @@ inbound-webhook trigger whose secret is issued once in the UI and returned as
 the scan also triggers on an issue labelled ``devin:scan``, and this opens one:
 a request, not work. The scan closes it on arrival and ignores its body.
 
-    REPO=you/superset GITHUB_TOKEN=... python -m scripts.run_scan
+    REPO=you/superset GITHUB_TOKEN=... python -m scanner.run_now
 """
 
 from __future__ import annotations
@@ -18,11 +18,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.github import GitHubClient, GitHubError  # noqa: E402
+from shared.github import GitHubClient, GitHubError  # noqa: E402
 
 LABEL = os.environ.get("SCAN_LABEL", "devin:scan")
 BODY = (
-    "Requested by `scripts/run_scan.py`. This issue is a trigger, not work — "
+    "Requested by `scanner/run_now.py`. This issue is a trigger, not work — "
     "the scan closes it as soon as it starts.\n"
 )
 

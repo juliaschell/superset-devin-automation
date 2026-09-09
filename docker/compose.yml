@@ -1,0 +1,27 @@
+services:
+  control-plane:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    # Bootstrap is idempotent, so every start reconciles the fork's labels,
+    # registry and the two automations with what is checked in here, then
+    # serves the dashboard. One command from nothing to a running system.
+    command: >
+      sh -c "python -m bootstrap &&
+             uvicorn control_plane.app:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    # Passed through from the shell rather than read from a file: there is no
+    # .env to copy, fill in and forget to gitignore, and a variable missing
+    # here fails on bootstrap's own message naming it.
+    environment:
+      - REPO
+      - DEVIN_API_KEY
+      - DEVIN_ORG_ID
+      - GITHUB_TOKEN
+      - POLL_INTERVAL_SECONDS
+    volumes:
+      - state:/data
+
+volumes:
+  state:

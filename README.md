@@ -54,7 +54,7 @@ interesting part of this design, so it is explicit:
 | Session dispatch | Devin Automation `start_session` | no webhook receiver, no HMAC, no dispatch loop |
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
 | Budget, concurrency, egress | Devin `limits` / `concurrency` / `net_policy` | native guardrails |
-| The remediation procedure | Devin playbook, referenced by the automation prompt | the prompt binds a repo and a trigger; the playbook says how the work is done, and is versioned here as `playbooks/remediate.md` |
+| The remediation procedure | Devin playbook, referenced by the automation prompt | the prompt binds a repo and a trigger; the playbook says how the work is done, and is versioned here as `remediator/playbook.md` |
 | Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the reconciler, and a missing one is recorded, not assumed |
 | Correlating attempts to an issue | **ours** | |
 | Longitudinal outcomes, cost, funnel | **ours** | Automations record *invocations*; the question here is *outcomes* |
@@ -118,11 +118,19 @@ There is one mode: live, against your own fork and your own Devin org. Two
 commands, whether you run them or your Devin does.
 
 ```bash
-cp .env.example .env    # REPO, DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN
-docker compose up --build   # http://localhost:8000
+export REPO=you/superset
+export DEVIN_API_KEY=...   # service user, Admin role
+export DEVIN_ORG_ID=...
+export GITHUB_TOKEN=...
+make up                    # http://localhost:8000
 ```
 
-`docker compose up` bootstraps before it serves: it forks Superset if `REPO`
+There is no file to copy or fill in: the four values are read from the shell and
+passed through to the container. They are exported rather than given as
+`make up REPO=...` because three of the four are secrets, and a command line
+ends up in shell history and in `ps`.
+
+`make up` bootstraps before it serves: it forks Superset if `REPO`
 does not exist yet, enables Issues, creates the labels, seeds an empty
 classification registry, and creates the playbook and both automations over
 REST, scoped to your fork. All of it is idempotent, so it runs on every start
@@ -152,7 +160,8 @@ It will ask for the same four values, which are the only inputs either path has.
   review events on a public fork reach the automations. This is the one step
   no API exposes; bootstrap prints the link when it finishes.
 
-Without Docker: `make install && make bootstrap && make run`.
+Without Docker: `make install && make bootstrap && make run`. Every Make target
+says who it is for in the comment above it.
 
 ### Endpoints
 
@@ -273,30 +282,45 @@ input** that flows into a prompt. The controls:
 
 ## Layout
 
+One directory per system. The two Devin-side systems are definitions rather than
+code we run — the platform runs them — so each holds its own automation spec,
+the prompt it runs, and the output shape it is asked for.
+
 ```
-automations/          checked-in automation definitions — the source of truth
-  scan.json           nightly schedule
-  remediate.json      devin:ready label + changes_requested review
-  prompts/            the prose, reviewable as prose in a diff
-  schemas/            structured-output contracts
-playbooks/
-  remediate.md        the remediation procedure, held by the platform
-registry/
-  README.md           the registry format, seeded into a fresh fork
-docs/
-  devin-api.md        what the API was asked for, and what it actually does
-  audit.md            four reviewers reading this system
-scripts/
-  apply_playbooks.py     create/update the playbooks over REST
-  apply_automations.py   validate (--check) or create/update over REST
-  bootstrap.py           fork setup + playbook + automations, in one idempotent pass
-  run_scan.py            fire a scan now, by labelling an issue
-src/
+scanner/              finds problems, files issues, proposes new classes
+  automation.json     nightly schedule + the devin:scan label
+  prompt.md           the prose, reviewable as prose in a diff
+  output_schema.json  the result shape, requested in the prompt
+  registry_seed.md    the registry format, seeded into a fresh fork
+  run_now.py          fire a scan now, by labelling an issue
+remediator/           fixes them, validates the fix, opens a PR
+  automation.json     devin:ready label + changes_requested review
+  prompt.md
+  output_schema.json
+  playbook.md         the remediation procedure, held by the platform
+control_plane/        the only code that runs here: watch, record, report
   reconcile.py        the only logic that matters; pure functions, testable
   metrics.py          every definition above, in code
   store.py            two tables, and why each exists
+  app.py, templates/  the dashboard and its endpoints
+shared/               clients and config both sides use
+  devin.py, github.py, config.py
+bootstrap/            one idempotent pass from nothing to a running system
+  __main__.py         fork setup, then the playbook and both automations
+  playbooks.py        create/update the playbooks over REST
+  automations.py      validate (--check) or create/update over REST
+docker/               Dockerfile + compose.yml, out of the way of the code
+docs/
+  devin-api.md        what the API was asked for, and what it actually does
+  audit.md            four reviewers reading this system
 tests/                including one that asserts we cannot merge
 ```
+
+Metrics have no directory of their own: they are the control plane's reason for
+existing rather than a system beside it.
+
+Dependencies are declared once, in `pyproject.toml` — the runtime four, plus a
+`[dev]` extra for test and lint tooling that never ships in the image.
 
 ```bash
 make check    # ruff + mypy + pytest

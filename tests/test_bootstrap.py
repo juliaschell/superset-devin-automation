@@ -11,8 +11,8 @@ from typing import Any
 
 import pytest
 
-from scripts import bootstrap
-from src.github import GitHubError
+from bootstrap import __main__ as bootstrap
+from shared.github import GitHubError
 
 
 class FakeGitHub:

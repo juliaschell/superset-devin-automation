@@ -7,8 +7,8 @@ rather than pasted into an automation prompt: the prompt binds it to a repo and
 a trigger, the playbook says how the work is done. It also carries the output
 schema, which an automation's ``start_session`` action has no field for.
 
-    python -m scripts.apply_playbooks --check   # render only, writes nothing
-    python -m scripts.apply_playbooks           # create or update
+    python -m bootstrap.playbooks --check   # render only, writes nothing
+    python -m bootstrap.playbooks           # create or update
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.devin import DevinClient, DevinError  # noqa: E402
+from shared.devin import DevinClient, DevinError  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-PLAYBOOKS = ROOT / "playbooks"
-SCHEMAS = ROOT / "automations" / "schemas"
+# One per system that has a procedure worth holding on the platform.
+PLAYBOOKS = [ROOT / "remediator" / "playbook.md"]
 
 
 def parse(path: Path) -> dict[str, Any]:
@@ -50,16 +50,16 @@ def parse(path: Path) -> dict[str, Any]:
     if macro := meta.get("macro"):
         spec["macro"] = macro
     if schema := meta.get("schema"):
-        spec["structured_output_schema"] = json.loads((SCHEMAS / schema).read_text())
+        spec["structured_output_schema"] = json.loads((path.parent / schema).read_text())
     return spec
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="render only; write nothing")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
-    specs = [parse(path) for path in sorted(PLAYBOOKS.glob("*.md"))]
+    specs = [parse(path) for path in PLAYBOOKS]
     for spec in specs:
         print(f"✓ {spec['title']}: {len(spec['body'])} chars, macro {spec.get('macro', '—')}")
     if args.check:

@@ -25,9 +25,15 @@ COMPOSE = docker compose -f docker/compose.yml
 up:
 	$(COMPOSE) up --build
 
-## Everyone. Run a scan now instead of waiting for 02:00 PT.
+## Everyone. Run a scan now instead of waiting for 02:00 PT. Goes through the
+## running container, which already has the dependencies and the credentials;
+## falls back to this machine's Python when nothing is up (the no-Docker path).
 scan:
-	python -m scanner.run_now
+	@if $(COMPOSE) ps --status running --quiet tracker | grep -q .; then \
+		$(COMPOSE) exec -T tracker python -m scanner.run_now; \
+	else \
+		python -m scanner.run_now; \
+	fi
 
 ## Everyone. Stop the tracker. State survives in the `state` volume.
 down:

@@ -70,8 +70,9 @@ dashboard counts every run whose actual command differed from the registry's.
 README says so.
 
 **Q. Secrets.**
-Nothing but env vars, and `.env` is gitignored. Nothing observed from a live run
-is committed, so there is no fixture to leak one.
+Nothing but env vars, exported in the operator's shell — the repo has no file to
+put a secret in. Nothing observed from a live run is committed, so there is no
+fixture to leak one.
 
 ---
 

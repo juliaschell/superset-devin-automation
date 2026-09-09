@@ -14,7 +14,8 @@ import time
 from datetime import datetime
 from typing import Any, NamedTuple
 
-from .github import pr_number_from_url
+from shared.github import pr_number_from_url
+
 from .store import Store
 
 # The v3 lifecycle is two fields, not one. ``status`` is coarse

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.store import Store
+from control_plane.store import Store
 
 
 def make(tmp_path) -> Store:

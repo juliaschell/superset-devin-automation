@@ -17,10 +17,11 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from starlette.requests import Request
 
+from shared.config import config
+from shared.devin import DevinClient
+from shared.github import GitHubClient
+
 from . import metrics as metrics_mod
-from .config import config
-from .devin import DevinClient
-from .github import GitHubClient
 from .reconcile import Reconciler
 from .store import Store
 
@@ -29,7 +30,7 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 def build_reconciler(store: Store) -> Reconciler:
     if missing := config.missing():
-        raise SystemExit(f"missing required configuration: {', '.join(missing)} (see .env.example)")
+        raise SystemExit(f"missing required configuration: {', '.join(missing)} (export them before starting)")
     devin = DevinClient(config.devin_api_key, config.devin_org_id, config.devin_api_base)
     github = GitHubClient(config.github_token, config.repo, config.github_api_base)
     return Reconciler(store, devin, github, config)

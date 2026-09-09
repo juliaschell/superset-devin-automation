@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Apply the checked-in automation definitions to Devin — infrastructure as code.
 
-The definitions in ``automations/*.json`` are the source of truth; this script
-makes the org match them. Prompts live in ``automations/prompts/*.md`` and
-output schemas in ``automations/schemas/*.json``, and are substituted in, so the
-prose is reviewable as prose in a diff.
+Each system owns its own definition: ``scanner/`` and ``remediator/`` each hold
+an ``automation.json``, the ``prompt.md`` it runs, and the ``output_schema.json``
+it is asked to return. They are the source of truth and this makes the org match
+them, substituting the prompt in so the prose stays reviewable as prose.
 
-    python -m scripts.apply_automations --check   # validate only, creates nothing
-    python -m scripts.apply_automations           # create or update
+    python -m bootstrap.automations --check   # validate only, creates nothing
+    python -m bootstrap.automations           # create or update
 """
 
 from __future__ import annotations
@@ -21,19 +21,14 @@ from typing import Any
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.devin import DevinClient, DevinError  # noqa: E402
+from shared.devin import DevinClient, DevinError  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-AUTOMATIONS = ROOT / "automations"
 
+# Directory per system, same three filenames in each.
 DEFINITIONS: dict[str, dict[str, str]] = {
-    "scan": {"spec": "scan.json", "prompt": "scan.md", "schema": "scan_output.json"},
-    "remediate": {
-        "spec": "remediate.json",
-        "prompt": "remediate.md",
-        "schema": "remediate_output.json",
-        "playbook": "Superset remediation",
-    },
+    "scanner": {},
+    "remediator": {"playbook": "Superset remediation"},
 }
 
 
@@ -46,9 +41,9 @@ def strip_docs(value: Any) -> Any:
 
 
 def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) -> dict[str, Any]:
-    files = DEFINITIONS[role]
-    spec = json.loads((AUTOMATIONS / files["spec"]).read_text())
-    prompt = (AUTOMATIONS / "prompts" / files["prompt"]).read_text()
+    files, home = DEFINITIONS[role], ROOT / role
+    spec = json.loads((home / "automation.json").read_text())
+    prompt = (home / "prompt.md").read_text()
 
     prompt = prompt.replace("{{REPO}}", repo).replace("{{MAX_ISSUES_PER_RUN}}", str(max_issues))
     if title := files.get("playbook"):
@@ -56,7 +51,7 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
         # playbook_id, which is read-only; the id is looked up by title so the
         # checked-in definition stays free of platform identifiers.
         prompt = f"@playbook:{playbook_ids[title]}\n\n{prompt}"
-    if schema_file := files.get("schema"):
+    if (schema_path := home / "output_schema.json").exists():
         # The schema goes in the prompt because nothing else carries it to the
         # session: the automations API has no field to attach one to a spawned
         # session, and a playbook's own `structured_output_schema` was measured
@@ -64,7 +59,7 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
         # is therefore requested, not enforced — so the reconciler treats every
         # structured-output field as optional and records a parse failure rather
         # than assuming it is present.
-        schema = json.loads((AUTOMATIONS / "schemas" / schema_file).read_text())
+        schema = json.loads(schema_path.read_text())
         prompt += (
             "\n\n## Output schema\n\nReturn structured output matching exactly:\n\n```json\n"
             + json.dumps(schema, indent=2)
@@ -122,13 +117,17 @@ def check_against_schemas(spec: dict[str, Any], schemas: dict[str, Any]) -> list
     return problems
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--check", action="store_true", help="validate only; create nothing")
-    parser.add_argument("--repo", default=os.environ.get("REPO", "juliaschell/superset"))
+    parser.add_argument("--repo", default=os.environ.get("REPO", ""))
     parser.add_argument("--max-issues", type=int, default=int(os.environ.get("MAX_ISSUES_PER_RUN", "8")))
     parser.add_argument("--only", choices=sorted(DEFINITIONS), help="apply a single automation")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+
+    if not args.repo:
+        print("REPO (or --repo) is required, as owner/name", file=sys.stderr)
+        return 2
 
     api_key, org_id = os.environ.get("DEVIN_API_KEY", ""), os.environ.get("DEVIN_ORG_ID", "")
     if not api_key or not org_id:

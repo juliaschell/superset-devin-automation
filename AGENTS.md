@@ -22,17 +22,19 @@ Ask once, together, and do not guess or substitute your own:
 | `DEVIN_ORG_ID` | their org id |
 | `GITHUB_TOKEN` | `repo` + issues + pull requests, write. Not merge |
 
-Put them in `.env` (copy `.env.example`). Never print them, never commit them.
+Export them in your shell. There is no file to create, and no `.env` to leave
+lying around. Never print them, never commit them, and do not pass them as
+command-line arguments — a command line is visible in `ps` and kept in history.
 
 ## Running it
 
 ```bash
-cp .env.example .env    # then fill in the four values
-docker compose up --build   # bootstraps, then serves http://localhost:8000
-make scan                   # optional: run a scan now, not at 02:00 PT
+export REPO=owner/superset DEVIN_API_KEY=... DEVIN_ORG_ID=... GITHUB_TOKEN=...
+make up      # bootstraps, then serves http://localhost:8000
+make scan    # optional: run a scan now, not at 02:00 PT
 ```
 
-`docker compose up` runs `scripts/bootstrap.py` first, which forks Superset if
+`make up` runs `python -m bootstrap` first, which forks Superset if
 `REPO` is missing, enables Issues, creates the labels, seeds the classification
 registry, and creates the playbook and both automations over REST scoped to that
 fork. It is idempotent — re-running reconciles rather than duplicates, so prefer
@@ -61,10 +63,12 @@ proposals — not to add classes yourself.
 
 ## Changing things
 
-- Automation behaviour lives in `automations/*.json` and `automations/prompts/`;
-  edit those and re-run bootstrap. Do not edit automations in the Devin UI —
-  the next bootstrap would overwrite the change and the diff would exist
-  nowhere.
+- One directory per system: `scanner/` and `remediator/` each hold the
+  automation spec, the prompt and the output schema that define them;
+  `control_plane/` is the service, `shared/` its clients, `bootstrap/` the
+  setup pass. Change behaviour by editing those files and re-running bootstrap.
+  Do not edit automations in the Devin UI — the next bootstrap would overwrite
+  the change and the diff would exist nowhere.
 - The classification registry lives in the **fork**, not here, and belongs to
   the human. Propose via PR; never move a file out of `_declined/`.
 - `make check` runs ruff, mypy and the tests. Keep it green.

@@ -1,40 +1,66 @@
-.PHONY: install bootstrap run check test lint types apply validate scan clean
+# Every target expects the four values in the environment:
+#
+#   export REPO=you/superset DEVIN_API_KEY=... DEVIN_ORG_ID=... GITHUB_TOKEN=...
+#
+# Exported rather than passed as `make up REPO=...` because a command line ends
+# up in shell history and in `ps`, and three of the four are secrets.
 
-install:
-	pip install -r requirements-dev.txt
+COMPOSE = docker compose -f docker/compose.yml
 
-# Fork Superset if needed, set the repo up, and create the playbook and both
-# automations against it. Idempotent: safe to re-run.
-bootstrap:
-	python -m scripts.bootstrap
+.PHONY: up down scan logs bootstrap run install check lint types test validate clean
 
-run:
-	uvicorn src.app:app --host 0.0.0.0 --port 8000
+# --- running it -------------------------------------------------------------
 
-# Validate the automation payloads against the live API. Creates nothing.
-validate:
-	python -m scripts.apply_playbooks --check
-	python -m scripts.apply_automations --check
+## Everyone. Bootstrap the fork and serve the dashboard on :8000. Idempotent,
+## so this is also how you apply a change to a prompt or an automation.
+up:
+	$(COMPOSE) up --build
 
-# Playbooks first: an automation prompt references its playbook by id, so the
-# playbook has to exist before the automation that points at it.
-apply:
-	python -m scripts.apply_playbooks
-	python -m scripts.apply_automations
-
+## Everyone. Run a scan now instead of waiting for 02:00 PT.
 scan:
-	python -m scripts.run_scan
+	python -m scanner.run_now
+
+## Everyone. Stop the control plane. State survives in the `state` volume.
+down:
+	$(COMPOSE) down
+
+## Everyone. Follow the control plane's logs.
+logs:
+	$(COMPOSE) logs -f
+
+# --- running it without Docker ----------------------------------------------
+
+## Anyone working on this repo. Fork setup, playbook and both automations.
+bootstrap:
+	python -m bootstrap
+
+## Anyone working on this repo. The dashboard, without a container.
+run:
+	uvicorn control_plane.app:app --host 0.0.0.0 --port 8000
+
+# --- working on this repo ---------------------------------------------------
+
+## Contributors. Runtime and dev dependencies, from pyproject.toml.
+install:
+	pip install -e ".[dev]"
+
+## Contributors, and CI. Everything that has to be green.
+check: lint types test
 
 lint:
-	ruff check src scripts tests
+	ruff check .
 
 types:
-	mypy src scripts
+	mypy bootstrap control_plane scanner shared
 
 test:
 	pytest -q
 
-check: lint types test
+## Contributors. Reachability of every trigger, against the live Devin API.
+## Creates and changes nothing.
+validate:
+	python -m bootstrap.playbooks --check
+	python -m bootstrap.automations --check
 
 clean:
 	rm -rf data .pytest_cache .mypy_cache .ruff_cache

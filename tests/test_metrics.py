@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from src.metrics import compute, prometheus, report_markdown
-from src.store import Store
+from control_plane.metrics import compute, prometheus, report_markdown
+from control_plane.store import Store
 
 
 def seed(tmp_path) -> Store:

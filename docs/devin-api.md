@@ -30,8 +30,8 @@ difference is written down here rather than worked around silently.
   optional and reads the report out of the session's final message.
 - **`session.playbook_id` is read-only** and derives from an `@playbook:<id>`
   token in the prompt. The id, not the title or the macro — both of those are
-  rejected. `scripts/apply_playbooks.py` creates the playbook, and
-  `scripts/apply_automations.py` looks its id up by title and prepends the
+  rejected. `bootstrap/playbooks.py` creates the playbook, and
+  `bootstrap/automations.py` looks its id up by title and prepends the
   token, so no platform identifier is checked into the repo.
 - **Playbook text does reach the session.** The probe quoted the first bound
   from the playbook back verbatim, which is the check worth doing before moving

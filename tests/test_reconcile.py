@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.reconcile import (
+from control_plane.reconcile import (
     Reconciler,
     failure_reason,
     issue_number_for,
     stage_for_session,
     task_update_from_session,
 )
-from src.store import Store
+from control_plane.store import Store
 
 
 class FakeConfig:
@@ -248,7 +248,7 @@ def test_nothing_in_the_client_can_merge():
     """The one invariant the user asked for, enforced by grep."""
     from pathlib import Path
 
-    source = Path("src/github.py").read_text()
+    source = Path("shared/github.py").read_text()
     assert "/merge" not in source
     assert "merge_method" not in source
 

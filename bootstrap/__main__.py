@@ -43,20 +43,24 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     try:
         info = github.repository()
     except GitHubError:
-        print(f"+ forking {upstream} → {repo}")
+        print(f"+ forking {upstream} → {repo}; Superset is large, so this takes a few minutes")
         try:
             github.fork(upstream)
         except GitHubError as exc:
             return [f"cannot fork {upstream} to {repo}: {exc}"]
-        for _ in range(30):  # GitHub forks asynchronously
+        # GitHub forks asynchronously and says nothing while it works, so say
+        # it here: silence for minutes is indistinguishable from a hang.
+        for attempt in range(1, 91):
             time.sleep(4)
             try:
                 info = github.repository()
                 break
             except GitHubError:
-                continue
+                if attempt % 5 == 0:
+                    print(f"  still forking, {attempt * 4}s elapsed")
         else:
-            return [f"{repo} did not appear after forking; re-run once GitHub finishes"]
+            return [f"{repo} did not appear after 6 minutes; re-run once GitHub finishes"]
+        print(f"+ {repo} exists")
 
     # Write access is proved by attempting a write, never by reading
     # `permissions`: an App installation token reports every permission false

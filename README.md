@@ -73,14 +73,18 @@ Issue classes are **not** hardcoded here. They live as markdown in the fork:
 .devin/classifications/
   transitive-npm-advisory.md
   stale-python-lockfile.md
-  _proposed/deprecated-flask-api.md   ← proposed by a scan, not yet adopted
+  _declined/test-describe-nesting.md   ← considered and rejected, with reasons
 ```
 
 Each file states what the class is, how to recognise it, how to fix it, the
 **command that validates a fix**, a severity, `max_open`, and whether it is
 active. The scan looks for instances of active classes *and* for things that fit
-no class — the latter arrive as a PR into `_proposed/`, which a human edits and
-adopts. Muting a noisy class is a one-line edit, not a code change.
+no class — the latter arrive as a PR adding the class file, written to be merged
+unchanged: complete frontmatter, `status: active`, a `max_open` sized so the
+class drips rather than floods. Agreeing costs a merge. Disagreeing costs one
+edit — `status: muted`, or a move to `_declined/` with a `## Why declined` note,
+which the scan reads and never proposes again. Deleting it instead would bring
+the same proposal back the next night with the decision lost.
 
 This is what makes the verification credible. A generic remediator that picks
 its own validation command can pick a weak one; here the gate is curated,

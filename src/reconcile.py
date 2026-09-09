@@ -11,15 +11,31 @@ without a network.
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 from .github import pr_number_from_url
 from .store import Store
 
-# status_enum values the API reports, mapped to whether we consider the session
-# still in flight.
-TERMINAL_STATUSES = {"finished", "expired", "stopped", "suspended"}
-BLOCKED_STATUSES = {"blocked"}
+# The v3 lifecycle is two fields, not one. ``status`` is coarse
+# (new/claimed/running/exit/error/suspended/resuming) and a session that has
+# *completed its task* is still ``running`` — with ``status_detail == finished``.
+# Reading status alone would leave every completed session counted as in flight.
+TERMINAL_STATUSES = {"exit", "error", "suspended"}
+FINISHED_DETAIL = "finished"
+# Devin is waiting on a person: the clearest possible loss of autonomy.
+BLOCKED_DETAILS = {"waiting_for_user", "waiting_for_approval"}
+# Suspension reasons that mean we ran out of budget rather than out of work.
+BUDGET_DETAILS = {
+    "usage_limit_exceeded",
+    "out_of_credits",
+    "out_of_quota",
+    "no_quota_allocation",
+    "payment_declined",
+    "org_usage_limit_exceeded",
+    "user_usage_limit_exceeded",
+    "total_session_limit_exceeded",
+}
 
 OUTCOME_TO_STAGE = {
     "pr_opened_validated": "verified",
@@ -32,6 +48,39 @@ FAILURE_REASONS = {
     "abandoned": "abandoned",
     "pr_opened_validation_failed": "verification_failed",
 }
+
+
+def _status(session: dict[str, Any]) -> tuple[str, str]:
+    return (
+        str(session.get("status") or ""),
+        str(session.get("status_detail") or ""),
+    )
+
+
+def is_done(session: dict[str, Any]) -> bool:
+    status, detail = _status(session)
+    return status in TERMINAL_STATUSES or detail == FINISHED_DETAIL
+
+
+def is_blocked(session: dict[str, Any]) -> bool:
+    return _status(session)[1] in BLOCKED_DETAILS
+
+
+def _started_at(session: dict[str, Any]) -> float | None:
+    """Epoch seconds for ``created_at``, which the API sends as an ISO string.
+
+    Treating it as a number silently disables timeout detection, so an
+    unparseable value returns None rather than a zero that ages instantly.
+    """
+    started = session.get("created_at")
+    if isinstance(started, int | float):
+        return float(started)
+    if isinstance(started, str):
+        try:
+            return datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp()
+        except ValueError:
+            return None
+    return None
 
 
 def structured(session: dict[str, Any]) -> dict[str, Any]:
@@ -62,28 +111,35 @@ def pr_url_for(session: dict[str, Any]) -> str | None:
     out = structured(session)
     if isinstance(out.get("pr_url"), str) and out["pr_url"]:
         return out["pr_url"]
-    pr = session.get("pull_request")
-    if isinstance(pr, dict):
-        return pr.get("url") or pr.get("pr_url")
-    if isinstance(pr, list) and pr:
-        first = pr[0]
-        if isinstance(first, dict):
-            return first.get("url") or first.get("pr_url")
+    # The API's own view of the session's PRs, which beats the prompt-requested
+    # field when a session opened one but never reported it.
+    for pr in session.get("pull_requests") or []:
+        if isinstance(pr, str) and pr:
+            return pr
+        if isinstance(pr, dict):
+            url = pr.get("url") or pr.get("pr_url")
+            if url:
+                return str(url)
     return None
 
 
 def task_update_from_session(session: dict[str, Any]) -> dict[str, Any]:
     """Everything we learn about a task from one session object."""
     out = structured(session)
-    status = session.get("status_enum") or session.get("status") or ""
+    status, detail = _status(session)
     update: dict[str, Any] = {
         "session_id": session.get("session_id"),
-        "session_status": status,
+        # Both halves, because "running" alone hides the difference between
+        # working, waiting on a human, and done.
+        "session_status": f"{status}/{detail}" if detail else status,
         "classification": out.get("classification"),
         "validate_command": out.get("validate_command"),
         "validate_registry": out.get("validate_command_from_registry"),
         "outcome": out.get("outcome"),
         "pr_url": pr_url_for(session),
+        # Measured, not configured: the run-cost half of the payback figure is
+        # whatever the sessions actually burned.
+        "acus": session.get("acus_consumed"),
     }
     if "validation_passed" in out:
         update["validation_passed"] = 1 if out.get("validation_passed") else 0
@@ -105,8 +161,7 @@ def stage_for_session(session: dict[str, Any], pr_state: str | None = None) -> s
         return OUTCOME_TO_STAGE[outcome]
     if pr_url_for(session):
         return "pr_open"
-    status = session.get("status_enum") or session.get("status") or ""
-    if status in TERMINAL_STATUSES or status in BLOCKED_STATUSES:
+    if is_done(session) or is_blocked(session):
         return "dispatched"
     return "running"
 
@@ -120,14 +175,20 @@ def failure_reason(session: dict[str, Any], timeout_seconds: int, now: float | N
         return None
     if outcome in FAILURE_REASONS:
         return FAILURE_REASONS[outcome]
-    status = session.get("status_enum") or session.get("status") or ""
-    if status in BLOCKED_STATUSES:
+    status, detail = _status(session)
+    if is_blocked(session):
         return "blocked_on_human"
-    if status in TERMINAL_STATUSES and not out:
+    if status == "error":
+        return "session_error"
+    # An operational failure, not a remediation one: the work never got a fair
+    # attempt, so it should not be filed under "Devin could not fix it".
+    if detail in BUDGET_DETAILS:
+        return "budget_exhausted"
+    if is_done(session) and not out:
         return "no_output"
-    started = session.get("created_at")
-    if status not in TERMINAL_STATUSES and isinstance(started, int | float):
-        if (now or time.time()) - float(started) > timeout_seconds:
+    started = _started_at(session)
+    if not is_done(session) and started is not None:
+        if (now or time.time()) - started > timeout_seconds:
             return "timed_out"
     return None
 
@@ -198,7 +259,7 @@ class Reconciler:
                 self.store.log(
                     "session_unattached",
                     session_id=session_id,
-                    detail=session.get("status_enum") or session.get("status"),
+                    detail="/".join(p for p in _status(session) if p),
                 )
                 continue
             task = self.store.get_task(number)

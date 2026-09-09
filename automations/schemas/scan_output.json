@@ -45,7 +45,7 @@
           "what": {"type": "string"},
           "reason": {
             "type": "string",
-            "enum": ["max_open", "duplicate", "not_actionable", "contradicts_repo_standards", "run_issue_cap"]
+            "enum": ["max_open", "duplicate", "not_actionable", "contradicts_repo_standards", "run_issue_cap", "class_declined"]
           }
         }
       }

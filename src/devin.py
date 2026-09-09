@@ -1,11 +1,12 @@
 """Devin API client.
 
-Two API surfaces are in play and they are not interchangeable:
+Everything here is the v3 organization API, under service-user RBAC
+(``ViewOrgAutomations`` / ``ManageOrgAutomations`` / ``ViewOrgSessions``).
 
-- ``/v1/sessions``  — session state. Any key can read it.
-- ``/v3/organizations/{org}/automations`` — automation CRUD and *run now*.
-  Service-user RBAC only (``ViewOrgAutomations`` / ``ManageOrgAutomations``);
-  a personal key is rejected here.
+``/v1/sessions`` is the personal surface and rejects a service key outright, so
+it is not a fallback. That is the better surface anyway: the v3 session object
+carries ``structured_output``, ``pull_requests`` and ``acus_consumed``, which is
+every field the reconciler needs from one call.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ class DevinClient:
     # -------------------------------------------------------------- sessions
 
     def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        """One call returns every in-flight session for our tag.
+        """One call returns every session for our tag.
 
         Tagging every automation-spawned session means the reconciler makes a
         single request per cycle rather than one per task.
@@ -45,40 +46,38 @@ class DevinClient:
         params: dict[str, Any] = {"limit": limit}
         if tags:
             params["tags"] = ",".join(tags)
-        data = self._request("GET", "/v1/sessions", params=params)
-        return data.get("sessions", []) if isinstance(data, dict) else []
+        data = self._request("GET", self._org_path("sessions"), params=params)
+        return data.get("items", []) if isinstance(data, dict) else []
 
     def get_session(self, session_id: str) -> dict[str, Any]:
-        return self._request("GET", f"/v1/session/{session_id}")
+        return self._request("GET", self._org_path(f"sessions/{session_id}"))
 
     # ------------------------------------------------------------ automations
 
     def _org_path(self, suffix: str = "") -> str:
         if not self.org_id:
-            raise DevinError("DEVIN_ORG_ID is required for automation endpoints")
-        return f"/v3/organizations/{self.org_id}/automations{suffix}"
+            raise DevinError("DEVIN_ORG_ID is required for the organization API")
+        return f"/v3/organizations/{self.org_id}/{suffix.lstrip('/')}"
 
     def list_automations(self) -> list[dict[str, Any]]:
-        data = self._request("GET", self._org_path())
+        data = self._request("GET", self._org_path("automations"))
         return data.get("items", []) if isinstance(data, dict) else []
 
-    def validate_automation(self, spec: dict[str, Any]) -> Any:
-        """Dry run. Creates nothing, so it is safe to run in CI."""
-        return self._request("POST", self._org_path("/validate"), json=spec)
+    def automation_schemas(self) -> dict[str, Any]:
+        """The platform's trigger catalogue: event types, their filterable fields,
+        and which reply kinds each supports.
+
+        There is no server-side dry-run endpoint, so this is what ``--check``
+        validates against — the authoritative shape, fetched rather than assumed.
+        """
+        data = self._request("GET", self._org_path("automations/schemas"))
+        return data if isinstance(data, dict) else {}
 
     def create_automation(self, spec: dict[str, Any]) -> dict[str, Any]:
-        return self._request("POST", self._org_path(), json=spec)
+        return self._request("POST", self._org_path("automations"), json=spec)
 
     def update_automation(self, automation_id: str, spec: dict[str, Any]) -> dict[str, Any]:
-        return self._request("PATCH", self._org_path(f"/{automation_id}"), json=spec)
-
-    def run_automation(self, automation_id: str) -> Any:
-        """Fire an enabled automation immediately, bypassing its triggers.
-
-        This is the manual entry point for the nightly scan — no second trigger
-        and no button of our own.
-        """
-        return self._request("POST", self._org_path(f"/{automation_id}/run"))
+        return self._request("PATCH", self._org_path(f"automations/{automation_id}"), json=spec)
 
     def close(self) -> None:
         self._client.close()

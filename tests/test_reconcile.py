@@ -66,7 +66,8 @@ def session(number: int, outcome: str | None = None, **extra: Any) -> dict[str, 
     out.update(extra.pop("output", {}))
     return {
         "session_id": extra.pop("session_id", f"session-{number}"),
-        "status_enum": extra.pop("status", "finished"),
+        "status": extra.pop("status", "running"),
+        "status_detail": extra.pop("status_detail", "finished"),
         "tags": ["superset-remediation"],
         "structured_output": out,
         **extra,
@@ -84,7 +85,16 @@ def test_issue_number_from_structured_output_then_tag():
 
 def test_finished_session_without_a_pr_is_not_success():
     """The most important negative case: 'the session ended' is not an outcome."""
-    assert stage_for_session(session(1, status="finished")) == "dispatched"
+    assert stage_for_session(session(1)) == "dispatched"
+
+
+def test_completion_is_read_from_status_detail_not_status():
+    """A session that has finished its task still reports status 'running'.
+    Reading status alone leaves every completed session counted as in flight."""
+    working = session(1, status="running", status_detail="working")
+    assert stage_for_session(working) == "running"
+    assert stage_for_session(session(1, status="running", status_detail="finished")) == "dispatched"
+    assert stage_for_session(session(1, status="exit", status_detail="")) == "dispatched"
 
 
 def test_validated_pr_reaches_verified_but_not_merged():
@@ -101,13 +111,18 @@ def test_failed_validation_stops_at_pr_open():
 
 def test_failure_taxonomy_distinguishes_causes():
     assert failure_reason(session(1, "no_matching_class"), 3600) == "no_matching_class"
-    assert failure_reason({"status_enum": "blocked", "structured_output": {}}, 3600) == "blocked_on_human"
-    assert failure_reason({"status_enum": "finished", "structured_output": {}}, 3600) == "no_output"
+    waiting = {"status": "running", "status_detail": "waiting_for_user", "structured_output": {}}
+    assert failure_reason(waiting, 3600) == "blocked_on_human"
+    assert failure_reason(session(1, status="error", status_detail="", output={}), 3600) == "session_error"
+    # Out of budget is an operational failure, not "Devin could not fix it".
+    broke = {"status": "suspended", "status_detail": "out_of_credits", "structured_output": {}}
+    assert failure_reason(broke, 3600) == "budget_exhausted"
+    assert failure_reason({"status": "exit", "structured_output": {}}, 3600) == "no_output"
     assert failure_reason(session(1, "pr_opened_validated"), 3600) is None
 
 
 def test_timeout_is_detected_from_age():
-    stuck = {"status_enum": "running", "structured_output": {}, "created_at": 0}
+    stuck = {"status": "running", "status_detail": "working", "structured_output": {}, "created_at": 0}
     assert failure_reason(stuck, timeout_seconds=10, now=1000) == "timed_out"
 
 
@@ -203,3 +218,17 @@ def test_nothing_in_the_client_can_merge():
     source = Path("src/github.py").read_text()
     assert "/merge" not in source
     assert "merge_method" not in source
+
+
+def test_pr_url_falls_back_to_the_api_view_of_the_session():
+    """A session that opens a PR but never reports it in structured output is
+    still observable: the v3 session object lists its pull requests."""
+    bare = session(11)
+    bare["structured_output"] = {"issue_number": 11}
+    bare["pull_requests"] = [{"url": "https://github.com/o/r/pull/4"}]
+    assert task_update_from_session(bare)["pr_url"] == "https://github.com/o/r/pull/4"
+    assert stage_for_session(bare) == "pr_open"
+
+
+def test_run_cost_is_read_from_the_session():
+    assert task_update_from_session(session(12, acus_consumed=3.5))["acus"] == 3.5

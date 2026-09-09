@@ -78,6 +78,22 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
+    # Run cost is measured: the v3 session object reports acus_consumed, so this
+    # is the sum of what the remediation sessions actually burned. Build cost is
+    # the human-and-Devin work that produced the system, which no session in this
+    # tag carries, so it stays a configured figure and is labelled as one.
+    measured_acus = round(sum(t.get("acus") or 0.0 for t in tasks), 2)
+    run = measured_acus or run_acus
+    cost = {
+        "build_acus": build_acus,
+        "run_acus": run,
+        "acus_per_merged_pr": round(run / len(merged), 2) if merged else None,
+        "acus_per_issue_detected": round(run / total, 2) if total else None,
+        "source": "measured per session via the v3 API"
+        if measured_acus
+        else "configured (no session ACUs observed yet)",
+    }
+
     last = store.get_meta("last_reconciled")
     last_reconciled_age = round(time.time() - float(last), 1) if last else None
 
@@ -112,16 +128,7 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         "median_cycle_seconds": _median(cycle),
         "failure_taxonomy": failure_taxonomy,
         "per_class": per_class,
-        # ACUs are not exposed per session by the API for this org, so these are
-        # recorded from the org usage page rather than measured here. Reported
-        # as configured values so the payback figure is reproducible.
-        "cost": {
-            "build_acus": build_acus,
-            "run_acus": run_acus,
-            "acus_per_merged_pr": round(run_acus / len(merged), 2) if merged else None,
-            "acus_per_issue_detected": round(run_acus / total, 2) if total else None,
-            "source": "org usage page (per-session ACUs are not API-exposed)",
-        },
+        "cost": cost,
         "last_reconciled_seconds_ago": last_reconciled_age,
     }
 

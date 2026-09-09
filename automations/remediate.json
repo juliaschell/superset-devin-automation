@@ -1,6 +1,6 @@
 {
+  "_doc": "Two doors, one prompt. Door A: an issue is labelled devin:ready (by the scanner or by a human). Door B: a human requests changes on a PR we opened, which re-runs the work on a corrected problem. Keys prefixed with _ are stripped before POST.",
   "name": "Superset — remediate",
-  "description": "Two doors, one prompt. Door A: an issue is labelled devin:ready (by the scanner or by a human). Door B: a human requests changes on a PR we opened, which is a re-run of the same work on a corrected problem.",
   "enabled": true,
   "run_as": {"type": "organization"},
   "triggers": [
@@ -55,12 +55,14 @@
     "net_policy": {
       "allow": [
         {"hostname": "git-manager.devin.ai"},
+        {"hostname": "api.github.com"},
+        {"hostname": "github.com"},
+        {"hostname": "codeload.github.com"},
         {"hostname": "registry.npmjs.org"},
         {"hostname": "pypi.org"},
         {"hostname": "files.pythonhosted.org"}
       ]
     }
   },
-  "notifications": {"email": {"when": "dispatch_failed"}},
   "metadata": {"project": "superset-remediation", "role": "remediator"}
 }

@@ -21,8 +21,19 @@
       }
     },
     {
-      "_doc": "The manual entry point. There is no run-now REST call, so an inbound webhook trigger is how a human fires a scan off-schedule; the platform issues the URL when the trigger is created.",
-      "event_type": "webhook:incoming"
+      "_doc": "The manual entry point. There is no run-now REST call, and the inbound-webhook trigger's secret is issued once in the UI and returned as null by the API, so it cannot be set up programmatically. Labelling an issue can be, with the same GitHub token the rest of the system already needs — so `make scan` opens a throwaway issue and labels it, and the scan closes it on arrival.",
+      "event_type": "github:issues",
+      "conditions": {
+        "any": [
+          {
+            "all": [
+              {"field": "repository.full_name", "operator": "eq", "value": "{{REPO}}"},
+              {"field": "action", "operator": "eq", "value": "labeled"},
+              {"field": "label.name", "operator": "eq", "value": "devin:scan"}
+            ]
+          }
+        ]
+      }
     }
   ],
   "actions": [

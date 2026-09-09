@@ -1,0 +1,70 @@
+# Instructions for an agent operating this repository
+
+This is the control plane for a Devin-driven detect → fix → verify loop on a
+fork of Apache Superset. If someone has pointed you at this repo and asked you
+to run it, this file is the whole procedure.
+
+## The one rule
+
+**Never merge a pull request** — not here, not on the fork, not the class
+proposals the scan opens. Every merge in this system is a human decision, and
+the metrics only mean something because that is true. Say what is mergeable and
+leave it.
+
+## What you need from the person who asked
+
+Ask once, together, and do not guess or substitute your own:
+
+| Variable | What it is |
+|---|---|
+| `REPO` | the Superset fork to work on, as `owner/name`. It need not exist yet |
+| `DEVIN_API_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
+| `DEVIN_ORG_ID` | their org id |
+| `GITHUB_TOKEN` | `repo` + issues + pull requests, write. Not merge |
+
+Put them in `.env` (copy `.env.example`). Never print them, never commit them.
+
+## Running it
+
+```bash
+cp .env.example .env    # then fill in the four values
+docker compose up --build   # bootstraps, then serves http://localhost:8000
+make scan                   # optional: run a scan now, not at 02:00 PT
+```
+
+`docker compose up` runs `scripts/bootstrap.py` first, which forks Superset if
+`REPO` is missing, enables Issues, creates the labels, seeds the classification
+registry, and creates the playbook and both automations over REST scoped to that
+fork. It is idempotent — re-running reconciles rather than duplicates, so prefer
+re-running it to hand-repairing anything it created.
+
+One thing you cannot do for them: connecting their GitHub org to Devin
+(https://app.devin.ai/settings) is a UI grant with no API. Until it is done,
+label and review events never reach the automations and the loop looks silently
+idle. Tell them, and check it first if nothing fires.
+
+## What to expect, in order
+
+1. The first scan finds no active classifications, so it files **no issues** and
+   instead opens a PR proposing classes. That is correct behaviour, not a
+   failure. The human merges it to switch detection on.
+2. The next scan files issues for the adopted classes and labels them
+   `devin:ready`, which triggers the remediation automation.
+3. Each remediation session opens a PR that has passed its class's validation
+   command. Nothing merges them.
+4. The dashboard at `http://localhost:8000` shows the funnel; `/report.md` is
+   the same thing written out, and `/healthz` fails if reconciliation stalls.
+
+Detection is only as good as the registry, so if the person wants to see the
+loop close in one sitting, the useful thing to do is help them review the class
+proposals — not to add classes yourself.
+
+## Changing things
+
+- Automation behaviour lives in `automations/*.json` and `automations/prompts/`;
+  edit those and re-run bootstrap. Do not edit automations in the Devin UI —
+  the next bootstrap would overwrite the change and the diff would exist
+  nowhere.
+- The classification registry lives in the **fork**, not here, and belongs to
+  the human. Propose via PR; never move a file out of `_declined/`.
+- `make check` runs ruff, mypy and the tests. Keep it green.

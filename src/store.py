@@ -144,8 +144,14 @@ class Store:
         now = time.time()
         existing = self.get_task(issue_number)
         if existing is None:
-            cols = ["issue_number", "detected_at", "updated_at", *fields.keys()]
-            vals = [issue_number, now, now, *fields.values()]
+            # A caller that knows when the work was really detected (GitHub's
+            # issue timestamp) says so; only otherwise does the row date itself
+            # from when this process happened to look.
+            defaults = {
+                k: now for k in ("detected_at", "updated_at") if k not in fields
+            }
+            cols = ["issue_number", *defaults.keys(), *fields.keys()]
+            vals = [issue_number, *defaults.values(), *fields.values()]
             placeholders = ", ".join("?" * len(cols))
             self.conn.execute(
                 f"INSERT INTO tasks ({', '.join(cols)}) VALUES ({placeholders})", vals
@@ -203,12 +209,17 @@ class Store:
             if STAGES.index(stage) < STAGES.index(task["stage"]):
                 return
         stamp: dict[str, Any] = {"stage": stage}
-        if stage == "dispatched":
-            stamp["dispatched_at"] = time.time()
-        elif stage == "pr_open":
-            stamp["pr_opened_at"] = time.time()
-        elif stage in ("verified", "merged"):
-            stamp["settled_at"] = time.time()
+        # Never restamp: GitHub's own timestamp for the PR, written when the
+        # reconciler first saw it, beats this clock — and on a database created
+        # after the work, this clock would report minutes for a day-old cycle.
+        column = {
+            "dispatched": "dispatched_at",
+            "pr_open": "pr_opened_at",
+            "verified": "settled_at",
+            "merged": "settled_at",
+        }.get(stage)
+        if column and not (task or {}).get(column):
+            stamp[column] = time.time()
         self.upsert_task(issue_number, **stamp)
         self.log(
             "stage",

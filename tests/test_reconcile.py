@@ -66,6 +66,7 @@ def issue(number: int, label: str = "devin:ready") -> dict[str, Any]:
         "title": f"issue {number}",
         "html_url": f"https://github.com/o/r/issues/{number}",
         "state": "open",
+        "created_at": "2026-09-01T00:00:00Z",
         "labels": [{"name": label}],
     }
 
@@ -260,6 +261,26 @@ def test_pr_url_falls_back_to_the_api_view_of_the_session():
     bare["pull_requests"] = [{"url": "https://github.com/o/r/pull/4"}]
     assert task_update_from_session(bare)["pr_url"] == "https://github.com/o/r/pull/4"
     assert stage_for_session(bare) == "pr_open"
+
+
+def test_durations_come_from_github_not_from_this_process_clock(tmp_path):
+    """A control plane started after the work would otherwise report a day-long
+    cycle as the few seconds between its own first two observations."""
+    store, github, reconciler = build(
+        tmp_path,
+        sessions=[
+            session(1, "pr_opened_validated", output={"pr_url": "https://github.com/o/r/pull/5"})
+        ],
+        issues={"devin:ready": [issue(1)]},
+    )
+    github.pull_requests[5] = {
+        "state": "open",
+        "created_at": "2026-09-01T01:00:00Z",
+        "head": {"ref": "devin/fix"},
+    }
+    reconciler.cycle()
+    task = store.get_task(1)
+    assert task["pr_opened_at"] - task["detected_at"] == 3600
 
 
 def test_run_cost_is_read_from_the_session():

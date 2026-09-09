@@ -1,17 +1,15 @@
-.PHONY: install demo run check test lint types apply validate scan record clean
+.PHONY: install bootstrap run check test lint types apply validate scan clean
 
 install:
 	pip install -r requirements-dev.txt
 
-# No credentials required: replays a recorded real run into the dashboard.
-# The database is discarded first so the run plays from its first frame, and
-# frames advance every 3s rather than at the live 30s poll interval.
-demo:
-	rm -f data/demo.db
-	MODE=replay DB_PATH=data/demo.db POLL_INTERVAL_SECONDS=3 uvicorn src.app:app --host 0.0.0.0 --port 8000
+# Fork Superset if needed, set the repo up, and create the playbook and both
+# automations against it. Idempotent: safe to re-run.
+bootstrap:
+	python -m scripts.bootstrap
 
 run:
-	MODE=live uvicorn src.app:app --host 0.0.0.0 --port 8000
+	uvicorn src.app:app --host 0.0.0.0 --port 8000
 
 # Validate the automation payloads against the live API. Creates nothing.
 validate:
@@ -26,9 +24,6 @@ apply:
 
 scan:
 	python -m scripts.run_scan
-
-record:
-	python -m scripts.record_run --minutes $(or $(MINUTES),60)
 
 lint:
 	ruff check src scripts tests

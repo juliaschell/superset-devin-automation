@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, NamedTuple
 
 from .github import pr_number_from_url
 from .store import Store
@@ -50,6 +50,12 @@ FAILURE_REASONS = {
 }
 
 
+class PrFacts(NamedTuple):
+    state: str | None
+    opened_at: float | None
+    merged_at: float | None
+
+
 def _status(session: dict[str, Any]) -> tuple[str, str]:
     return (
         str(session.get("status") or ""),
@@ -66,21 +72,24 @@ def is_blocked(session: dict[str, Any]) -> bool:
     return _status(session)[1] in BLOCKED_DETAILS
 
 
-def _started_at(session: dict[str, Any]) -> float | None:
-    """Epoch seconds for ``created_at``, which the API sends as an ISO string.
+def epoch(value: Any) -> float | None:
+    """Epoch seconds for a timestamp both APIs send as an ISO string.
 
     Treating it as a number silently disables timeout detection, so an
     unparseable value returns None rather than a zero that ages instantly.
     """
-    started = session.get("created_at")
-    if isinstance(started, int | float):
-        return float(started)
-    if isinstance(started, str):
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
         try:
-            return datetime.fromisoformat(started.replace("Z", "+00:00")).timestamp()
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
         except ValueError:
             return None
     return None
+
+
+def _started_at(session: dict[str, Any]) -> float | None:
+    return epoch(session.get("created_at"))
 
 
 def structured(session: dict[str, Any]) -> dict[str, Any]:
@@ -250,6 +259,10 @@ class Reconciler:
                 number,
                 title=issue.get("title", ""),
                 issue_url=issue.get("html_url", ""),
+                # When the issue was filed, not when this database first saw
+                # it: a control plane started after the work would otherwise
+                # report a day-long cycle as a few seconds.
+                detected_at=epoch(issue.get("created_at")),
             )
             if created:
                 self.store.log(
@@ -306,34 +319,49 @@ class Reconciler:
             reason = failure_reason(session, self.config.session_timeout_seconds)
             if reason:
                 self.store.upsert_task(number, failure_reason=reason)
-            pr_state = self.pr_state(
+            facts = self.pr_facts(
                 update.get("pr_url") or (task or {}).get("pr_url"),
                 (task or {}).get("pr_state"),
             )
-            if pr_state:
-                self.store.upsert_task(number, pr_state=pr_state)
-            self.store.advance(number, stage_for_session(session, pr_state))
+            stage = stage_for_session(session, facts.state)
+            if facts.state:
+                self.store.upsert_task(number, pr_state=facts.state)
+            # GitHub's timestamps beat this loop's clock, which only knows when
+            # it looked: a validated PR settled when it was opened, and a merged
+            # one when it was merged.
+            if not (task or {}).get("pr_opened_at"):
+                self.store.upsert_task(number, pr_opened_at=facts.opened_at)
+            if not (task or {}).get("settled_at"):
+                settled = facts.merged_at or (
+                    facts.opened_at if stage == "verified" else None
+                )
+                self.store.upsert_task(number, settled_at=settled)
+            self.store.advance(number, stage)
         return len(sessions)
 
-    def pr_state(self, pr_url: str | None, known: str | None = None) -> str | None:
-        """Merged is terminal, so it is remembered rather than re-fetched: this
+    def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:
+        """What GitHub says about the PR: its state and its own timestamps.
+
+        Merged is terminal, so it is remembered rather than re-fetched: this
         runs per task per cycle, and a settled task would otherwise spend a
-        GitHub call a minute for the rest of its life."""
-        if known == "merged":
-            return known
-        if not pr_url:
-            return None
+        GitHub call a minute for the rest of its life.
+        """
+        if known == "merged" or not pr_url:
+            return PrFacts(known if known == "merged" else None, None, None)
         number = pr_number_from_url(pr_url)
         if number is None:
-            return None
+            return PrFacts(None, None, None)
         try:
             pr = self.github.get_pull_request(number)
         except Exception as exc:  # noqa: BLE001
             self.store.log("error", detail=f"pr_state {pr_url}: {exc}")
-            return None
-        if pr.get("merged_at"):
-            return "merged"
-        return pr.get("state")
+            return PrFacts(None, None, None)
+        merged_at = epoch(pr.get("merged_at"))
+        return PrFacts(
+            "merged" if merged_at else pr.get("state"),
+            epoch(pr.get("created_at")),
+            merged_at,
+        )
 
     # --------------------------------------------------------------- cleanup
 

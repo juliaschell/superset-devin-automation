@@ -8,10 +8,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ src/
 COPY scripts/ scripts/
 COPY automations/ automations/
-COPY demo/ demo/
+COPY playbooks/ playbooks/
+COPY registry/ registry/
 
-ENV MODE=replay \
-    DB_PATH=/data/state.db \
+ENV DB_PATH=/data/state.db \
     PYTHONUNBUFFERED=1
 
 VOLUME ["/data"]

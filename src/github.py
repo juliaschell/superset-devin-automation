@@ -10,6 +10,7 @@ test.
 
 from __future__ import annotations
 
+import base64
 from typing import Any
 
 import httpx
@@ -38,11 +39,62 @@ class GitHubClient:
             raise GitHubError(f"{method} {path} → {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
 
+    def repository(self) -> dict[str, Any]:
+        return self._request("GET", f"/repos/{self.repo}")
+
+    def enable_issues(self) -> Any:
+        """Forks have Issues off by default, and the pipeline files issues."""
+        return self._request("PATCH", f"/repos/{self.repo}", json={"has_issues": True})
+
+    def fork(self, upstream: str) -> Any:
+        return self._request("POST", f"/repos/{upstream}/forks")
+
+    def ensure_label(self, name: str, color: str, description: str) -> bool:
+        """Create the label if it is missing. Returns True if it was created."""
+        try:
+            self._request("GET", f"/repos/{self.repo}/labels/{name}")
+        except GitHubError:
+            self._request(
+                "POST",
+                f"/repos/{self.repo}/labels",
+                json={"name": name, "color": color, "description": description},
+            )
+            return True
+        return False
+
+    def file_exists(self, path: str) -> bool:
+        try:
+            self._request("GET", f"/repos/{self.repo}/contents/{path}")
+        except GitHubError:
+            return False
+        return True
+
+    def put_file(self, path: str, content: str, message: str) -> Any:
+        """Commit a file to the default branch. Refuses to overwrite.
+
+        Used only to seed the classification registry into a fresh fork, which
+        is why there is no update path: the registry is edited by humans in
+        pull requests, never by this service.
+        """
+        return self._request(
+            "PUT",
+            f"/repos/{self.repo}/contents/{path}",
+            json={
+                "message": message,
+                "content": base64.b64encode(content.encode()).decode(),
+            },
+        )
+
     def issues_with_label(self, label: str, state: str = "all") -> list[dict[str, Any]]:
         return self._request(
             "GET",
             f"/repos/{self.repo}/issues",
             params={"labels": label, "state": state, "per_page": 100},
+        )
+
+    def create_issue(self, title: str, body: str) -> dict[str, Any]:
+        return self._request(
+            "POST", f"/repos/{self.repo}/issues", json={"title": title, "body": body}
         )
 
     def add_label(self, issue_number: int, label: str) -> Any:

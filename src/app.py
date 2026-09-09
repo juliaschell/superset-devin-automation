@@ -22,18 +22,16 @@ from .config import config
 from .devin import DevinClient
 from .github import GitHubClient
 from .reconcile import Reconciler
-from .replay import ReplayDevin, ReplayGitHub
 from .store import Store
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 
 def build_reconciler(store: Store) -> Reconciler:
-    if config.live:
-        devin: Any = DevinClient(config.devin_api_key, config.devin_org_id, config.devin_api_base)
-        github: Any = GitHubClient(config.github_token, config.repo, config.github_api_base)
-    else:
-        devin, github = ReplayDevin(), ReplayGitHub()
+    if missing := config.missing():
+        raise SystemExit(f"missing required configuration: {', '.join(missing)} (see .env.example)")
+    devin = DevinClient(config.devin_api_key, config.devin_org_id, config.devin_api_base)
+    github = GitHubClient(config.github_token, config.repo, config.github_api_base)
     return Reconciler(store, devin, github, config)
 
 
@@ -51,7 +49,7 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _startup() -> None:
-        store.log("service_start", detail=f"mode={config.mode} repo={config.repo}")
+        store.log("service_start", detail=f"repo={config.repo}")
         app.state.task = asyncio.create_task(loop())
 
     @app.on_event("shutdown")
@@ -88,9 +86,7 @@ def create_app() -> FastAPI:
 
     @app.get("/report.md", response_class=PlainTextResponse)
     def report() -> str:
-        return metrics_mod.report_markdown(
-            current_metrics(), store.tasks(), config.repo, config.mode
-        )
+        return metrics_mod.report_markdown(current_metrics(), store.tasks(), config.repo)
 
     @app.get("/healthz")
     def healthz() -> Any:
@@ -99,7 +95,7 @@ def create_app() -> FastAPI:
         # A dashboard that has stopped reconciling is worse than one that is
         # down, because it looks fine. Say so rather than lying.
         return JSONResponse(
-            {"ok": not stale, "last_reconciled_seconds_ago": age, "mode": config.mode},
+            {"ok": not stale, "last_reconciled_seconds_ago": age, "repo": config.repo},
             status_code=200 if not stale else 503,
         )
 

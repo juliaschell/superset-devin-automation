@@ -118,8 +118,8 @@
     <div class="panel">
       <h2>Cost</h2>
       <table>
-        <tr><td>build (planning + implementation)</td><td>{{ metrics.cost.build_acus }} ACU</td></tr>
-        <tr><td>run</td><td>{{ metrics.cost.run_acus }} ACU</td></tr>
+        <tr><td>build (planning + implementation)</td><td>{% if metrics.cost.build_acus %}{{ metrics.cost.build_acus }} ACU{% else %}—{% endif %}</td></tr>
+        <tr><td>run</td><td>{% if metrics.cost.run_acus %}{{ metrics.cost.run_acus }} ACU{% else %}—{% endif %}</td></tr>
         <tr><td>per merged PR</td><td>{{ metrics.cost.acus_per_merged_pr or '—' }}</td></tr>
         <tr><td>per issue detected</td><td>{{ metrics.cost.acus_per_issue_detected or '—' }}</td></tr>
         <tr><td>median time to PR</td><td>{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>

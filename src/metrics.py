@@ -19,6 +19,12 @@ def _median(values: list[float]) -> float | None:
     return round(statistics.median(values), 1) if values else None
 
 
+def _acus(value: float | None) -> str:
+    """An unmeasured cost says so. Rendering it as ``0 ACUs`` would be the one
+    lie this report cannot afford."""
+    return f"{value} ACUs" if value else "not available"
+
+
 def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dict[str, Any]:
     tasks = store.tasks()
     total = len(tasks)
@@ -78,20 +84,26 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # Run cost is measured: the v3 session object reports acus_consumed, so this
-    # is the sum of what the remediation sessions actually burned. Build cost is
-    # the human-and-Devin work that produced the system, which no session in this
-    # tag carries, so it stays a configured figure and is labelled as one.
+    # The v3 session object has an ``acus_consumed`` field and it reads 0.0 on
+    # every session this system has observed, finished ones included — the
+    # platform does not populate it for automation-spawned sessions. So a summed
+    # zero is an absent measurement, not a free run, and is never shown as one:
+    # the figure falls back to whatever was read off the org usage page and says
+    # which of the two it is.
     measured_acus = round(sum(t.get("acus") or 0.0 for t in tasks), 2)
-    run = measured_acus or run_acus
+    run = measured_acus or run_acus or None
     cost = {
-        "build_acus": build_acus,
+        "build_acus": build_acus or None,
         "run_acus": run,
-        "acus_per_merged_pr": round(run / len(merged), 2) if merged else None,
-        "acus_per_issue_detected": round(run / total, 2) if total else None,
+        "acus_per_merged_pr": round(run / len(merged), 2) if run and merged else None,
+        "acus_per_issue_detected": round(run / total, 2) if run and total else None,
         "source": "measured per session via the v3 API"
         if measured_acus
-        else "configured (no session ACUs observed yet)",
+        else "read off the org usage page — the API reports acus_consumed as 0.0 for "
+        "automation-spawned sessions"
+        if run
+        else "unavailable — the API reports acus_consumed as 0.0 for automation-spawned "
+        "sessions and exposes no usage endpoint",
     }
 
     last = store.get_meta("last_reconciled")
@@ -196,7 +208,7 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         f"- Settled (outcome known): **{t['settled']}**; still in flight: **{t['detected'] - t['settled']}**",
         "- Success means a PR whose classification's validation command passed — not 'the session finished'.",
         "- No PR is auto-merged; the merged count reflects human decisions only.",
-        f"- ACU figures are read from the org usage page ({cost['source']}).",
+        f"- ACU figures: {cost['source']}.",
         "",
         "## Outcomes",
         "",
@@ -236,10 +248,10 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         "",
         "## Cost",
         "",
-        f"- Build (planning + implementation sessions): **{cost['build_acus']} ACUs**",
-        f"- Run: **{cost['run_acus']} ACUs**",
-        f"- Per merged PR: **{cost['acus_per_merged_pr']}**",
-        f"- Per issue detected: **{cost['acus_per_issue_detected']}**",
+        f"- Build (planning + implementation sessions): **{_acus(cost['build_acus'])}**",
+        f"- Run: **{_acus(cost['run_acus'])}**",
+        f"- Per merged PR: **{_acus(cost['acus_per_merged_pr'])}**",
+        f"- Per issue detected: **{_acus(cost['acus_per_issue_detected'])}**",
         "",
         "## Tasks",
         "",

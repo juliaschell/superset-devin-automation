@@ -172,11 +172,15 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
-- **Run ACUs are measured, build ACUs are declared.** The v3 session object
-  reports `acus_consumed`, so run spend is summed from the sessions that did the
-  work. Build spend — the planning and implementation sessions that produced
-  this system — carries no such tag, so it is a configured figure and the
-  dashboard labels which is which. The payback question is about both.
+- **Cost is reported as "not available" rather than as zero.** The v3 session
+  object has an `acus_consumed` field, the reconciler sums it, and it reads
+  `0.0` on every session observed here — finished ones included. The platform
+  does not populate it for automation-spawned sessions, and there is no usage or
+  billing endpoint (both 404). A summed zero is therefore an absent measurement,
+  not a free run, so the dashboard prints `—` and names the reason. Supply
+  `RUN_ACUS` from the org usage page and it is shown as read-off-the-UI, which
+  is what it is. Build spend is a declared figure for the same reason: the
+  sessions that produced this system carry no tag that separates them.
 
 No outcome is fabricated in either direction — no engineered failures, no
 flattering denominators. Sample size is printed above every rate in the report.

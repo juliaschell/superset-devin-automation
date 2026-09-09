@@ -42,7 +42,7 @@ Bootstrap finishes by printing this as a boxed reminder, because it is the one
 step with no API: at https://app.devin.ai/settings/integrations/github, choose
 Configure / Manage repositories and add your fork. Until you do, Devin cannot
 read the code and label events reach no automation, so the loop looks idle. The
-dashboard repeats the reminder until it has tracked its first issue.
+dashboard repeats the reminder until the first session starts.
 
 4. Start the scanner by hand: 
 
@@ -53,6 +53,10 @@ $ make scan
 ```
 
 If not manually kicked, it would run automatically at 2:00PT
+
+`make scan` only files the issue whose label is the trigger, so the scan itself
+starts on Devin's side: watch it under **Scans** on the dashboard, not in the
+`make up` terminal, which logs only what it observes.
 
 The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 

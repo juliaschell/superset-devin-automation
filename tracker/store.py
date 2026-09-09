@@ -246,3 +246,16 @@ class Store:
     def get_meta(self, key: str) -> str | None:
         row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
+
+    def set_scans(self, scans: list[dict[str, Any]]) -> None:
+        """Scan sessions belong to no issue, so they have no row of their own.
+
+        They are the first thing to look at when the dashboard is empty — the
+        answer to "did anything happen at all" — and Devin remains their record,
+        so the latest view is cached here rather than modelled.
+        """
+        self.set_meta("scans", json.dumps(scans))
+
+    def scans(self) -> list[dict[str, Any]]:
+        raw = self.get_meta("scans")
+        return json.loads(raw) if raw else []

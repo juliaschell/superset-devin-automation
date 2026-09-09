@@ -45,9 +45,18 @@ re-running it to hand-repairing anything it created.
 
 One thing you cannot do for them: adding the fork to Devin's GitHub access
 (https://app.devin.ai/settings/integrations/github → Configure / Manage
-repositories) is a UI grant with no API. Until it is done,
-label and review events never reach the automations and the loop looks silently
-idle. Tell them, and check it first if nothing fires.
+repositories) is a UI grant with no API, and it is per repository — a fork they
+replace has to be added again. Until it is done, label and review events never
+reach the automations and the loop looks silently idle. Tell them, and check it
+first if nothing fires: `make scan` fails with these instructions when the
+session it triggered never starts.
+
+The other reason nothing starts is a cap, not a fault: each automation limits
+its own runs (`limits.invocations` in `scanner/automation.json` and
+`remediator/automation.json`), and a trigger over the cap is recorded as a
+**skipped** invocation — the issue is labelled, the automation is enabled, and
+no session exists. `make scan` distinguishes the two and names the cap. Raise
+the number there and re-run `make up` to apply it.
 
 ## What to expect, in order
 

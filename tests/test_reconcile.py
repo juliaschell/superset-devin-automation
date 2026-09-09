@@ -184,6 +184,27 @@ def test_second_session_on_one_issue_counts_as_rework(tmp_path):
     assert store.get_task(1)["session_id"] == "b"
 
 
+def test_two_sessions_on_one_issue_do_not_inflate_attempts_per_poll(tmp_path):
+    """The API returns concurrent sessions in no particular order, so counting
+    "this session differs from the one on the row" charges a fresh attempt every
+    cycle. Attempts are distinct sessions, however often they are seen."""
+    store, _, reconciler = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    reconciler.devin = FakeDevin([session(1, session_id="a"), session(1, session_id="b")])
+    for _ in range(5):
+        reconciler.cycle()
+    assert store.get_task(1)["attempts"] == 2
+
+
+def test_an_unattached_session_is_logged_once_not_once_per_cycle(tmp_path):
+    """Scan sessions never carry an issue number, so logging them on every poll
+    would bury the event log within an hour."""
+    store, _, reconciler = build(tmp_path)
+    reconciler.devin = FakeDevin([session(None, session_id="scan")])
+    for _ in range(4):
+        reconciler.cycle()
+    assert len([e for e in store.events() if e["kind"] == "session_unattached"]) == 1
+
+
 def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):
     store, github, reconciler = build(
         tmp_path,

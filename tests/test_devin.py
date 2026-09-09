@@ -10,6 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
+
 from src.devin import DevinClient, DevinError
 
 
@@ -62,6 +64,18 @@ def test_a_session_that_answered_in_prose_is_not_an_error() -> None:
     assert client.report(session()) == {}
 
 
+def test_the_trigger_payload_is_not_mistaken_for_a_report() -> None:
+    """The GitHub event that started the session arrives as fenced JSON in its
+    first message, so a session still working has JSON that is not a report."""
+    client = Client(
+        [
+            {"message": '```json\n{"action": "labeled", "issue": {"number": 14}}\n```'},
+            {"message": "Reading the classification file."},
+        ]
+    )
+    assert client.report(session()) == {}
+
+
 def test_malformed_json_is_skipped_rather_than_raised() -> None:
     client = Client([{"message": '```json\n{"outcome": oops}\n```'}])
     assert client.report(session()) == {}
@@ -104,3 +118,26 @@ def test_no_consumption_rows_is_unknown_rather_than_free() -> None:
 
 def test_an_unreadable_billing_surface_does_not_break_the_cycle() -> None:
     assert ConsumptionClient(None, error=True).session_acus("s1") is None
+
+
+class TimingOutTransport(DevinClient):
+    """Every request times out at the transport layer, as a slow API does."""
+
+    def __init__(self) -> None:
+        super().__init__("key", "org")
+        self.attempts = 0
+
+        def fail(*_: Any, **__: Any) -> Any:
+            self.attempts += 1
+            raise httpx.ReadTimeout("timed out")
+
+        self._client.request = fail  # type: ignore[method-assign]
+
+
+def test_a_timeout_degrades_one_reading_rather_than_the_whole_cycle() -> None:
+    """httpx raises its own exception type, so without translation a single slow
+    request escapes past the callers that are meant to tolerate it."""
+    client = TimingOutTransport()
+    assert client.report(session()) == {}
+    assert client.session_acus("s1") is None
+    assert client.attempts == 4  # one retry per call

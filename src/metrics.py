@@ -6,6 +6,7 @@ says what it measures and what it deliberately excludes.
 
 from __future__ import annotations
 
+import re
 import statistics
 import time
 from typing import Any
@@ -13,6 +14,9 @@ from typing import Any
 from .store import STAGES, Store
 
 VERIFIED_OUTCOME = "pr_opened_validated"
+# A class file writes its validate command with placeholders for the paths a
+# fix touches: `grep ... <files>`, `<file>`, `<scope>`.
+PLACEHOLDER = re.compile(r"<[a-z_]+>")
 
 
 def _median(values: list[float]) -> float | None:
@@ -43,6 +47,8 @@ def compute(store: Store) -> dict[str, Any]:
         t["issue_number"] for t in needed_human
     }
     autonomous = [t for t in verified if t.get("failure_reason") is None]
+
+    attempts = [t["attempts"] for t in tasks if (t.get("attempts") or 0) > 0]
 
     time_to_pr = [
         t["pr_opened_at"] - t["detected_at"]
@@ -117,10 +123,10 @@ def compute(store: Store) -> dict[str, Any]:
         # specifies. Not necessarily wrong — but it is the difference between a
         # curated gate and an improvised one, so it is never hidden.
         "validation_mismatches": len([t for t in tasks if _validation_mismatch(t)]),
-        "attempts_per_issue": round(
-            sum(t.get("attempts") or 0 for t in tasks) / total, 2
-        )
-        if total
+        # Averaged over dispatched issues, not over everything detected: an
+        # issue nobody has worked yet is not an issue that took zero attempts.
+        "attempts_per_issue": round(sum(attempts) / len(attempts), 2)
+        if attempts
         else 0,
         "reworked_issues": len([t for t in tasks if (t.get("attempts") or 0) > 1]),
         "median_time_to_pr_seconds": _median(time_to_pr),
@@ -133,8 +139,20 @@ def compute(store: Store) -> dict[str, Any]:
 
 
 def _validation_mismatch(task: dict[str, Any]) -> bool:
+    """Did the fix run a gate other than the one its class file specifies?
+
+    A class file writes its command as a template — ``grep ... <files>`` — and
+    the session fills the placeholder with the paths it touched. Substituting a
+    placeholder is the command being used as intended; anything else is a
+    session grading its own homework, which is the case worth counting.
+    """
     ran, registry = task.get("validate_command"), task.get("validate_registry")
-    return bool(ran and registry and ran.strip() != registry.strip())
+    if not ran or not registry:
+        return False
+    pattern = ".+".join(
+        re.escape(part) for part in PLACEHOLDER.split(registry.strip())
+    )
+    return re.fullmatch(pattern, ran.strip(), re.DOTALL) is None
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
@@ -182,7 +200,9 @@ def prometheus(metrics: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str) -> str:
+def report_markdown(
+    metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str, mode: str = "live"
+) -> str:
     """The honest write-up. Methodology first, because the numbers mean nothing
     without the sample size."""
     t = metrics["totals"]
@@ -202,6 +222,15 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         "- No PR is auto-merged; the merged count reflects human decisions only.",
         "- Cost is reported only where the consumption API measured it, which "
         "requires an Enterprise account; otherwise there is no cost section.",
+        *(
+            [
+                "- **Replay:** counts and outcomes are from a recorded real run. "
+                "Durations are omitted — replay's clock is a frame per cycle, not "
+                "the hours the run took."
+            ]
+            if mode != "live"
+            else []
+        ),
         "",
         "## Outcomes",
         "",
@@ -214,7 +243,11 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         f"| Validation-command mismatches | {metrics['validation_mismatches']} |",
         f"| Attempts per issue | {metrics['attempts_per_issue']} |",
         f"| Issues reworked at least once | {metrics['reworked_issues']} |",
-        f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |",
+        *(
+            [f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |"]
+            if mode == "live"
+            else []
+        ),
         f"| Merged by a human | {t['merged']} |",
         "",
         "## Funnel (cumulative — ever reached)",

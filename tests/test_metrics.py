@@ -67,6 +67,30 @@ def test_validation_mismatch_is_surfaced(tmp_path):
     assert metrics["per_class"]["stale-dep"]["validation_mismatch"] == 1
 
 
+def test_filling_a_placeholder_is_not_a_mismatch(tmp_path):
+    """Class files write the gate as a template and the session fills in the
+    files it touched. Counting substitution as a mismatch made the metric read
+    "almost every fix graded itself", which was noise."""
+    store = seed(tmp_path)
+    store.upsert_task(
+        1,
+        validate_registry="grep -q Licensed <files> && npm run type",
+        validate_command="grep -q Licensed a.ts b.ts && npm run type",
+    )
+    assert compute(store)["validation_mismatches"] == 0
+
+
+def test_attempts_are_averaged_over_dispatched_issues(tmp_path):
+    """A detected issue nobody has worked yet is not an issue that took zero
+    attempts; including it drags the average below one."""
+    store = seed(tmp_path)
+    store.upsert_task(9, classification="stale-dep")
+    store.advance(9, "detected")
+    metrics = compute(store)
+    assert metrics["attempts_per_issue"] == 1.25
+    assert metrics["reworked_issues"] == 1
+
+
 def test_per_class_rates(tmp_path):
     metrics = compute(seed(tmp_path))
     assert metrics["per_class"]["stale-dep"]["success_rate"] == 50.0

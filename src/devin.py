@@ -30,6 +30,12 @@ import httpx
 
 JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
+# A session's *first* message is the trigger payload, which is itself fenced
+# JSON — so "the newest JSON block" finds the GitHub event on any session that
+# has not reported yet, and files the webhook as a result. A report is one of
+# the two output schemas, and these keys are what distinguish them.
+REPORT_KEYS = frozenset({"outcome", "issues_filed", "classes_proposed"})
+
 
 class DevinError(RuntimeError):
     pass
@@ -45,7 +51,17 @@ class DevinClient:
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
+        # A transport failure is raised as DevinError like any other, so the one
+        # slow request in a cycle degrades that reading rather than aborting the
+        # pass: callers already treat DevinError as "we know less this cycle".
+        # Retried once, because the read timeouts seen here are transient.
+        for attempt in (1, 2):
+            try:
+                response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
+                break
+            except httpx.HTTPError as exc:
+                if attempt == 2:
+                    raise DevinError(f"{method} {path} → {exc!r}") from exc
         if response.status_code >= 400:
             raise DevinError(f"{method} {path} → {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
@@ -75,9 +91,10 @@ class DevinClient:
         """What the session said it did, from wherever it managed to say it.
 
         Costs one extra request per session, and only for sessions the platform
-        left without ``structured_output`` — which is all of them today. Parse
+        left without ``structured_output`` — which is all of them here. Parse
         failures return ``{}`` rather than raising: a session that answered in
-        prose is a session we know less about, not a broken cycle.
+        prose is a session we know less about, not a broken cycle. So does a
+        session still working, whose only JSON so far is its own trigger.
         """
         out = session.get("structured_output")
         if isinstance(out, dict) and out:
@@ -98,7 +115,7 @@ class DevinClient:
                     parsed = json.loads(block)
                 except json.JSONDecodeError:
                     continue
-                if isinstance(parsed, dict):
+                if isinstance(parsed, dict) and REPORT_KEYS & parsed.keys():
                     return parsed
         return {}
 

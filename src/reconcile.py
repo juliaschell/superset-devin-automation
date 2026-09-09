@@ -208,6 +208,10 @@ class Reconciler:
         self.devin = devin
         self.github = github
         self.config = config
+        # Sessions with no issue attached are logged once, not once per poll:
+        # the scan sessions are permanently unattached by nature, and at one
+        # cycle every thirty seconds they would otherwise be the entire log.
+        self._unattached: set[str] = set()
 
     # ------------------------------------------------------------------ pass
 
@@ -261,7 +265,10 @@ class Reconciler:
     def sync_sessions(self) -> int:
         """What Devin is doing about it. One call for every in-flight session."""
         sessions = self.devin.list_sessions(tags=[self.config.session_tag])
-        for session in sessions:
+        # Oldest first, so when several sessions attack one issue the row ends
+        # the cycle describing the newest attempt rather than whichever the API
+        # happened to list last.
+        for session in sorted(sessions, key=lambda s: _started_at(s) or 0.0):
             session = {
                 **session,
                 "structured_output": self.devin.report(session),
@@ -270,37 +277,50 @@ class Reconciler:
             session_id = session.get("session_id")
             number = issue_number_for(session)
             if number is None:
-                self.store.log(
-                    "session_unattached",
-                    session_id=session_id,
-                    detail="/".join(p for p in _status(session) if p),
-                )
+                if session_id not in self._unattached:
+                    self._unattached.add(str(session_id))
+                    self.store.log(
+                        "session_unattached",
+                        session_id=session_id,
+                        detail="/".join(p for p in _status(session) if p),
+                    )
                 continue
             task = self.store.get_task(number)
             update = task_update_from_session(session)
-            if task and task.get("session_id") and task["session_id"] != session_id:
+            seen = self.store.session_ids_for(number)
+            if session_id and session_id not in seen:
                 # A second session against the same issue is a rework attempt,
                 # not a duplicate. Chaining these is what makes attempts-per-issue
-                # meaningful.
-                update["attempts"] = (task.get("attempts") or 1) + 1
-                self.store.log(
-                    "attempt", issue_number=number, session_id=session_id, detail="rework"
-                )
-            elif not task or not task.get("session_id"):
-                update["attempts"] = 1
-                self.store.log("dispatched", issue_number=number, session_id=session_id)
+                # meaningful — and counting distinct sessions, rather than
+                # comparing against the session on the row, is what keeps it from
+                # climbing by one on every poll.
+                update["attempts"] = len(seen) + 1
+                if seen:
+                    self.store.log(
+                        "attempt", issue_number=number, session_id=session_id, detail="rework"
+                    )
+                else:
+                    self.store.log("dispatched", issue_number=number, session_id=session_id)
             self.store.upsert_task(number, **update)
 
             reason = failure_reason(session, self.config.session_timeout_seconds)
             if reason:
                 self.store.upsert_task(number, failure_reason=reason)
-            pr_state = self.pr_state(update.get("pr_url") or (task or {}).get("pr_url"))
+            pr_state = self.pr_state(
+                update.get("pr_url") or (task or {}).get("pr_url"),
+                (task or {}).get("pr_state"),
+            )
             if pr_state:
                 self.store.upsert_task(number, pr_state=pr_state)
             self.store.advance(number, stage_for_session(session, pr_state))
         return len(sessions)
 
-    def pr_state(self, pr_url: str | None) -> str | None:
+    def pr_state(self, pr_url: str | None, known: str | None = None) -> str | None:
+        """Merged is terminal, so it is remembered rather than re-fetched: this
+        runs per task per cycle, and a settled task would otherwise spend a
+        GitHub call a minute for the rest of its life."""
+        if known == "merged":
+            return known
         if not pr_url:
             return None
         number = pr_number_from_url(pr_url)

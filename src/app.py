@@ -88,7 +88,9 @@ def create_app() -> FastAPI:
 
     @app.get("/report.md", response_class=PlainTextResponse)
     def report() -> str:
-        return metrics_mod.report_markdown(current_metrics(), store.tasks(), config.repo)
+        return metrics_mod.report_markdown(
+            current_metrics(), store.tasks(), config.repo, config.mode
+        )
 
     @app.get("/healthz")
     def healthz() -> Any:

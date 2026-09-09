@@ -123,9 +123,16 @@
         <tr><td>per merged PR</td><td>{{ metrics.cost.acus_per_merged_pr or '—' }}</td></tr>
         <tr><td>per issue detected</td><td>{{ metrics.cost.acus_per_issue_detected or '—' }}</td></tr>
         {% endif %}
-        <tr><td>median time to PR</td><td>{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>
+        <tr><td>median time to PR</td><td>
+          {% if config.live %}{{ metrics.median_time_to_pr_seconds or '—' }}s
+          {% else %}not measured in replay{% endif %}
+        </td></tr>
       </table>
       <div class="sub">
+        {% if not config.live %}
+          Replay: outcomes are from a recorded real run. Durations are omitted —
+          replay's clock is a frame per cycle, not the hours the run took.
+        {% endif %}
         {% if metrics.cost %}
           Measured per session via the v3 consumption API.
         {% else %}

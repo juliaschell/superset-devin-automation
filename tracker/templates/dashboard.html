@@ -27,6 +27,8 @@
     .pill { display:inline-block; padding:1px 8px; border-radius:10px; border:1px solid var(--line); font-size:11px; }
     .fresh { border-color:var(--ok); color:var(--ok); }
     .stale { border-color:var(--bad); color:var(--bad); }
+    .setup { border-color:var(--warn); background:#231b09; }
+    .setup ol { margin:8px 0 0; padding-left:20px; }
   </style>
 </head>
 <body>
@@ -49,6 +51,21 @@
 </header>
 
 <main>
+  {% if not tasks %}
+  <section class="panel setup">
+    <h2 class="warn">Nothing has run yet — check Devin's access to the fork</h2>
+    <div>Granting it is the one step with no API, and until it is done every trigger
+      silently does nothing.</div>
+    <ol>
+      <li>open <a href="https://app.devin.ai/settings/integrations/github">app.devin.ai/settings/integrations/github</a></li>
+      <li>under GitHub, choose Configure / Manage repositories</li>
+      <li>add <strong>{{ config.repo }}</strong> to the repositories Devin may access, and save</li>
+    </ol>
+    <div class="sub">Then run <code>make scan</code> rather than waiting for 02:00 PT. This panel
+      disappears once the first issue is tracked.</div>
+  </section>
+  {% endif %}
+
   <section class="row">
     <div class="panel">
       <h2>Success rate</h2>

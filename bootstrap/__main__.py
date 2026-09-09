@@ -90,6 +90,31 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     return []
 
 
+def banner(repo: str) -> str:
+    """The one step with no API: granting Devin access to the fork.
+
+    Missed, every trigger silently does nothing, so it is worth the box.
+    """
+    lines = [
+        "ONE MANUAL STEP LEFT (skip it if you have already done it)",
+        "",
+        f"Devin needs access to {repo}, and only the UI can grant it:",
+        "",
+        "  1. open https://app.devin.ai/settings/integrations/github",
+        "  2. under GitHub, choose Configure / Manage repositories",
+        f"  3. add {repo} to the repositories Devin may access, and save",
+        "",
+        "Until then the scan cannot read the code and issue labels reach",
+        "no automation, so the dashboard sits empty and looks broken.",
+        "",
+        "Then: http://localhost:8000 for the dashboard, and `make scan`",
+        "in a second terminal to run a scan now rather than at 02:00 PT.",
+    ]
+    width = max(len(line) for line in lines)
+    body = "\n".join(f"│ {line.ljust(width)} │" for line in lines)
+    return f"\n┌─{'─' * width}─┐\n{body}\n└─{'─' * width}─┘\n"
+
+
 def seed_registry(github: GitHubClient) -> None:
     """The registry's format spec and nothing else: what counts as a defect in
     this repo is the human's call, and the first scan proposes candidates."""
@@ -141,15 +166,12 @@ def main() -> int:
     if code := automations.main(["--repo", args.repo]):
         return code
 
-    print(
-        f"\nOne thing left that no API offers: connect {args.repo} to Devin\n"
-        "(https://app.devin.ai/settings) so GitHub events reach the automations.\n"
-    )
+    code = run_now.main() if args.scan else 0
 
-    if args.scan:
-        return run_now.main()
-    print("Then: `make scan` to run one now, or wait for the nightly. `make run` for the dashboard.")
-    return 0
+    # Last, and framed, because it is the one step no API can do and the
+    # server's own logs start scrolling underneath it a second later.
+    print(banner(args.repo))
+    return code
 
 
 if __name__ == "__main__":

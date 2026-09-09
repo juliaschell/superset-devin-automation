@@ -38,8 +38,11 @@ The container will boot-strap as needed (create the fork, modify git settings, s
 
 3. Configure Devin's GitHub access: 
 
-Bootstrap finishes by printing a link to connect the fork to Devin. The UI grant
-is required for label and review events to trigger Devin Automations.
+Bootstrap finishes by printing this as a boxed reminder, because it is the one
+step with no API: at https://app.devin.ai/settings/integrations/github, choose
+Configure / Manage repositories and add your fork. Until you do, Devin cannot
+read the code and label events reach no automation, so the loop looks idle. The
+dashboard repeats the reminder until it has tracked its first issue.
 
 4. Start the scanner by hand: 
 

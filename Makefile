@@ -16,14 +16,24 @@ export DEVIN_ORG_ID := $(DEVIN_ORG)
 
 COMPOSE = docker compose -f docker/compose.yml
 
-.PHONY: up down scan logs bootstrap run install check lint types test validate clean
+.PHONY: up down scan logs values bootstrap run install check lint types test validate clean
 
 # --- running it -------------------------------------------------------------
 
 ## Everyone. Bootstrap the fork and serve the dashboard on :8000. Idempotent,
 ## so this is also how you apply a change to a prompt or an automation.
-up:
+up: values
 	$(COMPOSE) up --build
+
+# Stop before starting anything if a value is missing. Usually a `:` typed
+# instead of `=`, which make reads as the name of another target.
+values:
+	@missing="$(strip $(foreach v,REPO DEVIN_KEY DEVIN_ORG GITHUB_TOKEN,$(if $($(v)),,$(v))))"; \
+	if [ -n "$$missing" ]; then \
+		echo "no value for: $$missing"; \
+		echo "usage: make up REPO=you/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=..."; \
+		exit 2; \
+	fi
 
 ## Everyone. Run a scan now instead of waiting for 02:00 PT. Goes through the
 ## running container, which already has the dependencies and the credentials;
@@ -46,7 +56,7 @@ logs:
 # --- running it without Docker ----------------------------------------------
 
 ## Anyone working on this repo. Fork setup, playbook and both automations.
-bootstrap:
+bootstrap: values
 	python -m bootstrap
 
 ## Anyone working on this repo. The dashboard, without a container.

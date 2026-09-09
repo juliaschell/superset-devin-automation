@@ -37,15 +37,30 @@ class GitHubClient:
             raise GitHubError(f"{method} {path} → {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
 
-    def repository(self) -> dict[str, Any]:
-        return self._request("GET", f"/repos/{self.repo}")
+    def repository(self, full_name: str | None = None) -> dict[str, Any]:
+        return self._request("GET", f"/repos/{full_name or self.repo}")
 
     def enable_issues(self) -> Any:
         """Forks have Issues off by default, and the pipeline files issues."""
         return self._request("PATCH", f"/repos/{self.repo}", json={"has_issues": True})
 
+    def viewer(self) -> str:
+        """The account the token belongs to."""
+        return str(self._request("GET", "/user")["login"])
+
     def fork(self, upstream: str) -> Any:
-        return self._request("POST", f"/repos/{upstream}/forks")
+        """Fork into exactly `self.repo`.
+
+        Without `name` the fork keeps the upstream's name, and without
+        `organization` it lands under the token's own account — so asking for
+        `you/anything-else` silently produces `you/superset`, and the wait for
+        the requested name never ends.
+        """
+        owner, _, name = self.repo.partition("/")
+        payload: dict[str, Any] = {"name": name}
+        if owner != self.viewer():
+            payload["organization"] = owner
+        return self._request("POST", f"/repos/{upstream}/forks", json=payload)
 
     def ensure_label(self, name: str, color: str, description: str) -> bool:
         """Create the label if it is missing. Returns True if it was created."""

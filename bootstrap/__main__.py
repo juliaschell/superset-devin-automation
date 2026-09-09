@@ -38,25 +38,50 @@ LABELS = [
 ]
 
 
+def existing_fork_hint(github: GitHubClient, repo: str, upstream: str) -> str:
+    """Why the requested name never appeared.
+
+    An account gets one fork of a given upstream, and asking for a second one
+    returns the first instead of creating it — so the usual cause is a fork
+    already sitting under another name.
+    """
+    owner = repo.split("/")[0]
+    sibling = f"{owner}/{upstream.split('/')[1]}"
+    try:
+        if (github.repository(sibling).get("parent") or {}).get("full_name") == upstream:
+            return (
+                f"{owner} already forks {upstream} as {sibling}, and GitHub will not make "
+                f"a second one, so {repo} was never created. Re-run with REPO={sibling}, "
+                f"or rename {sibling} first"
+            )
+    except GitHubError:
+        pass
+    return f"{repo} did not appear after two minutes; re-run once GitHub finishes"
+
+
 def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     """Make the fork exist and be usable. Returns what could not be fixed."""
     try:
         info = github.repository()
     except GitHubError:
-        print(f"+ forking {upstream} → {repo}")
+        print(f"+ forking {upstream} → {repo}; Superset is large, so this takes a few minutes")
         try:
             github.fork(upstream)
         except GitHubError as exc:
             return [f"cannot fork {upstream} to {repo}: {exc}"]
-        for _ in range(30):  # GitHub forks asynchronously
+        # GitHub forks asynchronously and says nothing while it works, so say
+        # it here: silence for minutes is indistinguishable from a hang.
+        for attempt in range(1, 31):
             time.sleep(4)
             try:
                 info = github.repository()
                 break
             except GitHubError:
-                continue
+                if attempt % 5 == 0:
+                    print(f"  still forking, {attempt * 4}s elapsed")
         else:
-            return [f"{repo} did not appear after forking; re-run once GitHub finishes"]
+            return [existing_fork_hint(github, repo, upstream)]
+        print(f"+ {repo} exists")
 
     # Write access is proved by attempting a write, never by reading
     # `permissions`: an App installation token reports every permission false

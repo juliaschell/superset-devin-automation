@@ -19,7 +19,7 @@ The system includes a Devin automation to scan for problems and a separate autom
   https://app.devin.ai/settings/org-service-users 
 - A GitHub API token with `repo` scope —
   https://github.com/settings/tokens (Developer settings → Personal access
-  tokens). Issues and pull requests: write. Merge is never used
+  tokens). Issues and pull requests: write
 
 2. Stand up the container:
 
@@ -36,9 +36,8 @@ The container will boot-strap as needed (create the fork, modify git settings, s
 
 3. Configure Devin's GitHub access: 
 
-Bootstrap finishes by printing a link to connect the fork to Devin, which is a
-UI grant with no API. Until it is done, label and review events never reach the
-automations and the loop sits silently idle.
+Bootstrap finishes by printing a link to connect the fork to Devin. The UI grant
+is required for label and review events to trigger Devin Automations.
 
 4. Start the scanner by hand: 
 

@@ -51,6 +51,13 @@ reach the automations and the loop looks silently idle. Tell them, and check it
 first if nothing fires: `make scan` fails with these instructions when the
 session it triggered never starts.
 
+The other reason nothing starts is a cap, not a fault: each automation limits
+its own runs (`limits.invocations` in `scanner/automation.json` and
+`remediator/automation.json`), and a trigger over the cap is recorded as a
+**skipped** invocation — the issue is labelled, the automation is enabled, and
+no session exists. `make scan` distinguishes the two and names the cap. Raise
+the number there and re-run `make up` to apply it.
+
 ## What to expect, in order
 
 1. The first scan finds no active classifications, so it files **no issues** and

@@ -7,10 +7,11 @@ inbound-webhook trigger whose secret is issued once in the UI and returned as
 the scan also triggers on an issue labelled ``devin:scan``, and this opens one:
 a request, not work. The scan closes it on arrival and ignores its body.
 
-Labelling always succeeds, so it says nothing about whether Devin heard: the
-one setup step with no API is granting Devin access to the fork, and without it
-the label lands and no session starts. So this waits for the session it asked
-for and reports what it found.
+Labelling always succeeds, so it says nothing about whether Devin heard, and
+the two ways of not being heard need different fixes: the fork is not in
+Devin's GitHub access (a UI grant, no API), or the automation heard and skipped
+the run because its daily cap is spent. Neither is visible from GitHub, so this
+waits for the session it asked for and, failing that, says which one happened.
 
     REPO=you/superset GITHUB_TOKEN=... python -m scanner.run_now
 """
@@ -20,6 +21,7 @@ from __future__ import annotations
 import os
 import sys
 import time
+from typing import Any
 
 from shared.config import config
 from shared.devin import DevinClient, DevinError
@@ -45,6 +47,14 @@ NOT_HEARD = """
   again. Then re-run `make scan`; the issue below stays valid, or label another.
 """
 
+SKIPPED = """
+✗ {name} heard the label and skipped the run: it is capped at {runs} runs per
+  {window}, and this one would have been over it. Nothing is broken.
+
+  Wait for the window, or raise limits.invocations.max_per_window in
+  scanner/automation.json and re-run `make up` to apply it.
+"""
+
 
 def scan_session_ids(devin: DevinClient) -> set[str]:
     """Sessions the scan automation has spawned, newest run included."""
@@ -53,6 +63,26 @@ def scan_session_ids(devin: DevinClient) -> set[str]:
         for s in devin.list_sessions(tags=[config.session_tag])
         if "role:scan" in (s.get("tags") or [])
     }
+
+
+def skipped_run(devin: DevinClient, since: float) -> dict[str, Any] | None:
+    """The scan automation, if it declined to run since ``since``.
+
+    A skip is a rate limit, not a fault, and it is reported nowhere the
+    operator looks — the issue is labelled, the automation is enabled, and no
+    session exists.
+    """
+    try:
+        automations = devin.list_automations()
+    except DevinError:
+        return None
+    for automation in automations:
+        if (automation.get("metadata") or {}).get("role") != "scanner":
+            continue
+        last = automation.get("last_invocation") or {}
+        if last.get("status") == "skipped" and float(last.get("fired_at") or 0) >= since:
+            return automation
+    return None
 
 
 def wait_for_scan(devin: DevinClient, before: set[str], seconds: float = WAIT_SECONDS) -> str | None:
@@ -90,6 +120,7 @@ def main() -> int:
             devin = None
 
     github = GitHubClient(token, repo)
+    requested_at = time.time()
     try:
         issue = github.create_issue("Run a scan", BODY)
         github.add_label(issue["number"], LABEL)
@@ -103,7 +134,20 @@ def main() -> int:
     print(f"  waiting up to {WAIT_SECONDS}s for the session it triggers")
     session_id = wait_for_scan(devin, before)
     if session_id is None:
-        print(NOT_HEARD.format(waited=WAIT_SECONDS, repo=repo), file=sys.stderr)
+        declined = skipped_run(devin, requested_at)
+        if declined is None:
+            print(NOT_HEARD.format(waited=WAIT_SECONDS, repo=repo), file=sys.stderr)
+            return 1
+        limit = (declined.get("limits") or {}).get("invocations") or {}
+        hours = int(limit.get("window_seconds") or 0) // 3600
+        print(
+            SKIPPED.format(
+                name=declined.get("name", "the scan automation"),
+                runs=limit.get("max_per_window", "?"),
+                window=f"{hours}h" if hours else "window",
+            ),
+            file=sys.stderr,
+        )
         return 1
     print(f"✓ scanning: https://app.devin.ai/sessions/{session_id.removeprefix('devin-')}")
     return 0

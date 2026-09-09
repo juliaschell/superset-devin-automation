@@ -57,9 +57,11 @@ $ make scan
 If not manually kicked, it would run automatically at 2:00PT
 
 `make scan` only files the issue whose label is the trigger, so the scan itself
-starts on Devin's side: it waits for that session, prints a link to it, and
-fails if none starts within 90s. Follow it under **Scans** on the dashboard,
-not in the `make up` terminal, which logs only what it observes.
+starts on Devin's side: it waits for that session, prints a link to it, and if
+none starts says why — either Devin has no access to the fork, or the scan
+automation is over its 12-runs-a-day cap and skipped this one. Follow it under
+**Scans** on the dashboard, not in the `make up` terminal, which logs only what
+it observes.
 
 The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 

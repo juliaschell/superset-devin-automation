@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "superset-remediation"
 version = "0.1.0"
@@ -19,7 +23,7 @@ dev = [
 ]
 
 [tool.setuptools]
-packages = ["bootstrap", "control_plane", "remediator", "scanner", "shared"]
+packages = ["bootstrap", "tracker", "remediator", "scanner", "shared"]
 
 [tool.ruff]
 line-length = 112
@@ -34,3 +38,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# So the tests import the working tree, installed or not.
+pythonpath = ["."]

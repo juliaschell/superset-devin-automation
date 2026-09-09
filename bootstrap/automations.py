@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Apply the checked-in automation definitions to Devin — infrastructure as code.
+"""Apply the checked-in automation definitions to Devin — automations as code.
 
-Each system owns its own definition: ``scanner/`` and ``remediator/`` each hold
-an ``automation.json``, the ``prompt.md`` it runs, and the ``output_schema.json``
-it is asked to return. They are the source of truth and this makes the org match
-them, substituting the prompt in so the prose stays reviewable as prose.
+``scanner/`` and ``remediator/`` each hold an ``automation.json``, the
+``prompt.md`` it runs and the ``output_schema.json`` it is asked to return.
+Those files are the source of truth; this makes the org match them, keeping the
+prompts reviewable as prose rather than as JSON strings.
 
     python -m bootstrap.automations --check   # validate only, creates nothing
     python -m bootstrap.automations           # create or update
@@ -19,9 +19,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from shared.devin import DevinClient, DevinError  # noqa: E402
+from shared.devin import DevinClient, DevinError
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -47,18 +45,15 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
 
     prompt = prompt.replace("{{REPO}}", repo).replace("{{MAX_ISSUES_PER_RUN}}", str(max_issues))
     if title := files.get("playbook"):
-        # The platform resolves `@playbook:<id>` in the prompt into the action's
-        # playbook_id, which is read-only; the id is looked up by title so the
-        # checked-in definition stays free of platform identifiers.
+        # A session's playbook_id is read-only and derived from this token.
+        # Looked up by title so no platform id is checked in.
         prompt = f"@playbook:{playbook_ids[title]}\n\n{prompt}"
     if (schema_path := home / "output_schema.json").exists():
-        # The schema goes in the prompt because nothing else carries it to the
-        # session: the automations API has no field to attach one to a spawned
-        # session, and a playbook's own `structured_output_schema` was measured
-        # not to reach a session that arrives through a prompt token. The shape
-        # is therefore requested, not enforced — so the reconciler treats every
-        # structured-output field as optional and records a parse failure rather
-        # than assuming it is present.
+        # In the prompt because nothing else carries a schema to a spawned
+        # session: the automations API has no field for one, and a playbook's
+        # `structured_output_schema` was measured not to reach the session.
+        # So the shape is requested, not enforced, and the watcher treats every
+        # field of it as optional.
         schema = json.loads(schema_path.read_text())
         prompt += (
             "\n\n## Output schema\n\nReturn structured output matching exactly:\n\n```json\n"
@@ -78,12 +73,11 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
 
 
 def check_against_schemas(spec: dict[str, Any], schemas: dict[str, Any]) -> list[str]:
-    """Validate a spec against the platform's own trigger catalogue.
+    """Validate a spec against the platform's trigger catalogue.
 
-    There is no server-side dry-run endpoint, so the next best thing is to check
-    the parts that fail silently rather than loudly: a trigger that names an
-    event type or a condition field the platform does not publish never fires,
-    and produces no error anywhere.
+    There is no dry-run endpoint, and these are the mistakes that fail silently:
+    a trigger naming an event type or condition field the platform does not
+    publish is accepted, never fires, and reports nothing.
     """
     catalogue: dict[str, dict[str, Any]] = {}
     for source in schemas.get("sources", {}).values():

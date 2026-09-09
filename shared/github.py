@@ -1,11 +1,9 @@
-"""GitHub client — detection of queued work, and cleanup of rejected work.
+"""GitHub client: find queued work, clean up rejected work.
 
-Deliberately small. GitHub is *not* consulted for PR state: the Devin session
-object already reports it, and asking both would introduce a third opinion for
-no gain.
+Small on purpose. PR state is read from the Devin session object, which already
+reports it, rather than from here as well.
 
-There is no merge call in this file. That is the point, and it is enforced by a
-test.
+There is no merge call in this file, and a test keeps it that way.
 """
 
 from __future__ import annotations
@@ -70,11 +68,9 @@ class GitHubClient:
         return True
 
     def put_file(self, path: str, content: str, message: str) -> Any:
-        """Commit a file to the default branch. Refuses to overwrite.
-
-        Used only to seed the classification registry into a fresh fork, which
-        is why there is no update path: the registry is edited by humans in
-        pull requests, never by this service.
+        """Commit a file to the default branch; the API refuses to overwrite
+        without a blob sha, and there is deliberately no update path. This
+        seeds the registry into a fresh fork; humans edit it after that.
         """
         return self._request(
             "PUT",
@@ -98,12 +94,6 @@ class GitHubClient:
         )
 
     def add_label(self, issue_number: int, label: str) -> Any:
-        """Fallback path only.
-
-        Used if the platform filters events its own bots caused, in which case
-        the scanner's label never reaches the remediator and we apply it from
-        here instead.
-        """
         return self._request(
             "POST", f"/repos/{self.repo}/issues/{issue_number}/labels", json={"labels": [label]}
         )

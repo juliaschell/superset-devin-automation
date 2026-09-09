@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta http-equiv="refresh" content="15">
-  <title>Superset remediation — control plane</title>
+  <title>Superset remediation</title>
   <style>
     :root { color-scheme: dark; --bg:#0d1117; --panel:#161b22; --line:#30363d; --fg:#e6edf3; --dim:#8b949e; --ok:#3fb950; --warn:#d29922; --bad:#f85149; --accent:#58a6ff; }
     * { box-sizing: border-box; }
@@ -32,17 +32,17 @@
 <body>
 <header>
   <div>
-    <h1>Superset remediation — control plane</h1>
+    <h1>Superset remediation</h1>
     <div class="sub">{{ config.repo }} · PRs are never auto-merged</div>
   </div>
   <div>
-    {% set age = metrics.last_reconciled_seconds_ago %}
+    {% set age = metrics.last_checked_seconds_ago %}
     {% if age is none %}
-      <span class="pill stale">never reconciled</span>
+      <span class="pill stale">never checked</span>
     {% elif age > config.poll_interval_seconds * 4 %}
-      <span class="pill stale">last reconciled {{ age }}s ago — stale</span>
+      <span class="pill stale">last checked {{ age }}s ago — stale</span>
     {% else %}
-      <span class="pill fresh">last reconciled {{ age }}s ago</span>
+      <span class="pill fresh">last checked {{ age }}s ago</span>
     {% endif %}
     <span class="dim">· <a href="/report.md">report.md</a> · <a href="/metrics">/metrics</a></span>
   </div>

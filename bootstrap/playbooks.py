@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Apply the checked-in playbooks to Devin — infrastructure as code, as with the
-automations.
+"""Apply the checked-in playbooks to Devin, as with the automations.
 
-A playbook is the procedure a remediation session follows, held by the platform
-rather than pasted into an automation prompt: the prompt binds it to a repo and
-a trigger, the playbook says how the work is done. It also carries the output
-schema, which an automation's ``start_session`` action has no field for.
+The split: a playbook is *how* remediation is done, reusable and invocable by
+hand through its macro; an automation prompt is *which repo and which trigger*.
 
     python -m bootstrap.playbooks --check   # render only, writes nothing
     python -m bootstrap.playbooks           # create or update
@@ -20,21 +17,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
-from shared.devin import DevinClient, DevinError  # noqa: E402
+from shared.devin import DevinClient, DevinError
 
 ROOT = Path(__file__).resolve().parent.parent
-# One per system that has a procedure worth holding on the platform.
 PLAYBOOKS = [ROOT / "remediator" / "playbook.md"]
 
 
 def parse(path: Path) -> dict[str, Any]:
-    """Split a playbook file into its frontmatter and its body.
-
-    The frontmatter is three keys and nothing nests, so it is read line by line
-    rather than adding a YAML dependency for it.
-    """
+    """Split a playbook file into frontmatter and body. Three flat keys, so it
+    is read line by line rather than adding a YAML dependency."""
     text = path.read_text()
     if not text.startswith("---\n"):
         raise ValueError(f"{path.name}: expected a --- frontmatter block")

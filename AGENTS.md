@@ -20,7 +20,7 @@ Ask once, together, and do not guess or substitute your own:
 | `REPO` | the Superset fork to work on, as `owner/name`. It need not exist yet |
 | `DEVIN_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
 | `DEVIN_ORG` | their org id |
-| `GITHUB_TOKEN` | `repo` + issues + pull requests, write. Not merge |
+| `GITHUB_TOKEN` | a classic token with the `repo` scope, and only that one |
 
 There is no file to create and no `.env` to leave lying around. Never print them
 and never commit them.

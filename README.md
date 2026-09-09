@@ -17,9 +17,9 @@ The system includes a Devin automation to scan for problems and a separate autom
 
 - a **service-user** API key with the Admin role —
   https://app.devin.ai/settings/org-service-users 
-- A GitHub API token with `repo` scope —
-  https://github.com/settings/tokens (Developer settings → Personal access
-  tokens → Generate New Token (classic)). Issues and pull requests: write
+- a personal access token (classic) with the `repo` scope, and only that one —
+  https://github.com/settings/tokens/new?scopes=repo opens the form with the
+  box already ticked
 
 2. Stand up the container:
 
@@ -30,7 +30,7 @@ $ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TO
 - `REPO` — the fork to work on, created for you if it does not exist yet
 - `DEVIN_KEY` — a Devin **service-user** key, Admin role
 - `DEVIN_ORG` — your Devin org id, `org-…`
-- `GITHUB_TOKEN` — repo, issues, pull requests. Not merge
+- `GITHUB_TOKEN` — the `repo` scope. Nothing here ever merges
 
 The container will boot-strap as needed (create the fork, modify git settings, seed the classification registry, and create the playbook and automations for the fork)
 

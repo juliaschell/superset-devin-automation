@@ -19,7 +19,7 @@ The system includes a Devin automation to scan for problems and a separate autom
   https://app.devin.ai/settings/org-service-users 
 - A GitHub API token with `repo` scope —
   https://github.com/settings/tokens (Developer settings → Personal access
-  tokens). Issues and pull requests: write
+  tokens → Generate New Token (classic)). Issues and pull requests: write
 
 2. Stand up the container:
 
@@ -115,31 +115,32 @@ Definitions are choices, so they are stated rather than implied:
               ▼
      ┌──────────────────┐   finding fits no class    ★ PR proposing
      │      scanner     │ ─────────────────────────▶    a new class
-     │      (Devin)     │                                    │
-     └────────┬─────────┘                                    ▼
-              │ finding fits an active class            human: review
-              ▼                                              │
-     ★ GitHub issue,                                         │
-       labelled devin:ready                                  │
-              │                                              │
-              ▼                                              │
-     ┌──────────────────┐                                    │
-     │ remediate session│                                    │
-     │      (Devin)     │                                    │
-     └────────┬─────────┘                                    │
-              ▼                                              │
-     ★ Remediation PR                                        │
-              │                                              │
-      ┌───────┴─────────────┬──────────────────────┐         │
-      ▼                     ▼                      ▼         │
-  human: merge   human: request changes   human: label issue  │
-                  → attempt 2 on the      devin:rejected      │
-                    same branch           → PR, branch and    │
-                                            issue closed      │
-                                                              │
-  merged classifications ◀────────────────────────────────────┘
-        ├──▶ scanner:    what counts as a bug, and how many at a time
-        └──▶ remediator: how to fix it, and the command that proves it
+     │      (Devin)     │                                     │
+     └────────┬─────────┘                                     ▼
+              │       │                                 human: review
+              │       │                                       │
+              │       ┘───────────────────────────────────────┘
+              │                                               │  
+              │ finding fits an active class                  │        
+              ▼                                               │ 
+     ★ GitHub issue,                                          │
+       labelled devin:ready                                   │
+              │                                               │
+              ▼                                               │
+     ┌──────────────────┐                                     │
+     │ remediate session│                                     │
+     │      (Devin)     │◀────────────────────────────────────┘
+     └────────┬─────────┘                                    
+              ▼                                              
+     ★ Remediation PR                                        
+              │                                              
+      ┌───────┴─────────────┬──────────────────────┐         
+      ▼                     ▼                      ▼         
+  human: merge   human: request changes   human: label issue  
+                  → attempt 2 on the      devin:rejected      
+                    same branch           → PR, branch and    
+                                            issue closed      
+
 
   Throughout: the tracker polls Devin and GitHub, records every transition,
   and serves ★ the dashboard, ★ report.md and ★ /metrics.

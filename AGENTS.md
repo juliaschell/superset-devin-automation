@@ -45,9 +45,11 @@ re-running it to hand-repairing anything it created.
 
 One thing you cannot do for them: adding the fork to Devin's GitHub access
 (https://app.devin.ai/settings/integrations/github → Configure / Manage
-repositories) is a UI grant with no API. Until it is done,
-label and review events never reach the automations and the loop looks silently
-idle. Tell them, and check it first if nothing fires.
+repositories) is a UI grant with no API, and it is per repository — a fork they
+replace has to be added again. Until it is done, label and review events never
+reach the automations and the loop looks silently idle. Tell them, and check it
+first if nothing fires: `make scan` fails with these instructions when the
+session it triggered never starts.
 
 ## What to expect, in order
 

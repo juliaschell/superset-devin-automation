@@ -26,6 +26,17 @@ class FakeDevin:
     def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
         return self._sessions
 
+    def report(self, session: dict[str, Any]) -> dict[str, Any]:
+        out = session.get("structured_output")
+        return out if isinstance(out, dict) else {}
+
+    def session_acus(self, session_id: str) -> float | None:
+        for session in self._sessions:
+            if session.get("session_id") == session_id:
+                acus = session.get("acus_consumed")
+                return float(acus) if isinstance(acus, int | float) else None
+        return None
+
 
 class FakeGitHub:
     def __init__(self, issues: dict[str, list[dict[str, Any]]] | None = None) -> None:
@@ -171,6 +182,27 @@ def test_second_session_on_one_issue_counts_as_rework(tmp_path):
     reconciler.cycle()
     assert store.get_task(1)["attempts"] == 2
     assert store.get_task(1)["session_id"] == "b"
+
+
+def test_two_sessions_on_one_issue_do_not_inflate_attempts_per_poll(tmp_path):
+    """The API returns concurrent sessions in no particular order, so counting
+    "this session differs from the one on the row" charges a fresh attempt every
+    cycle. Attempts are distinct sessions, however often they are seen."""
+    store, _, reconciler = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    reconciler.devin = FakeDevin([session(1, session_id="a"), session(1, session_id="b")])
+    for _ in range(5):
+        reconciler.cycle()
+    assert store.get_task(1)["attempts"] == 2
+
+
+def test_an_unattached_session_is_logged_once_not_once_per_cycle(tmp_path):
+    """Scan sessions never carry an issue number, so logging them on every poll
+    would bury the event log within an hour."""
+    store, _, reconciler = build(tmp_path)
+    reconciler.devin = FakeDevin([session(None, session_id="scan")])
+    for _ in range(4):
+        reconciler.cycle()
+    assert len([e for e in store.events() if e["kind"] == "session_unattached"]) == 1
 
 
 def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):

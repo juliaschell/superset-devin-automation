@@ -63,7 +63,7 @@ def create_app() -> FastAPI:
                 await task
 
     def current_metrics() -> dict[str, Any]:
-        return metrics_mod.compute(store, config.build_acus, config.run_acus)
+        return metrics_mod.compute(store)
 
     @app.get("/", response_class=HTMLResponse)
     def dashboard(request: Request) -> Any:
@@ -88,7 +88,9 @@ def create_app() -> FastAPI:
 
     @app.get("/report.md", response_class=PlainTextResponse)
     def report() -> str:
-        return metrics_mod.report_markdown(current_metrics(), store.tasks(), config.repo)
+        return metrics_mod.report_markdown(
+            current_metrics(), store.tasks(), config.repo, config.mode
+        )
 
     @app.get("/healthz")
     def healthz() -> Any:

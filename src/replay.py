@@ -54,6 +54,20 @@ class ReplayDevin(_Replay):
         self.advance()
         return sessions
 
+    def report(self, session: dict[str, Any]) -> dict[str, Any]:
+        # The recorder resolved this from the session's messages while it still
+        # had an API to ask; offline it is just a field in the frame.
+        out = session.get("structured_output")
+        return out if isinstance(out, dict) else {}
+
+    def session_acus(self, session_id: str) -> float | None:
+        # Same story as the report: resolved at record time, replayed as a field.
+        for session in self.frame.get("sessions", []):
+            if session.get("session_id") == session_id:
+                acus = session.get("acus_consumed")
+                return float(acus) if isinstance(acus, int | float) else None
+        return None
+
     def get_session(self, session_id: str) -> dict[str, Any]:
         for session in self.frame.get("sessions", []):
             if session.get("session_id") == session_id:

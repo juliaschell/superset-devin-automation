@@ -48,17 +48,29 @@ def main() -> int:
             if not i.get("pull_request")
         ]
         pull_requests = {}
+        # Bake each session's report and cost into the frame. Offline replay
+        # has no API to ask, and both arrive empty on the session object — so if
+        # they are not resolved here, the recording remembers only that a
+        # session ran.
+        sessions = [
+            {
+                **s,
+                "structured_output": devin.report(s),
+                "acus_consumed": devin.session_acus(str(s.get("session_id") or "")),
+            }
+            for s in sessions
+        ]
         for session in sessions:
             out = session.get("structured_output") or {}
             url = out.get("pr_url") if isinstance(out, dict) else None
             number = pr_number_from_url(url) if url else None
             if number:
-                pull_requests[str(number)] = github.get_pull_request(number)
+                pull_requests[str(number)] = slim_pull_request(github.get_pull_request(number))
         frames.append(
             {
                 "captured_at": time.time(),
-                "sessions": sessions,
-                "issues": _slim_issues(issues),
+                "sessions": [slim_session(s) for s in sessions],
+                "issues": [slim_issue(i) for i in issues],
                 "pull_requests": pull_requests,
             }
         )
@@ -68,19 +80,48 @@ def main() -> int:
     return 0
 
 
-def _slim_issues(issues: list[dict]) -> list[dict]:
-    """Keep only the fields the reconciler reads. Recordings are committed, so
-    they should not carry the whole GitHub payload."""
-    return [
-        {
-            "number": i["number"],
-            "title": i.get("title", ""),
-            "html_url": i.get("html_url", ""),
-            "state": i.get("state"),
-            "labels": [{"name": lab["name"]} for lab in i.get("labels", [])],
-        }
-        for i in issues
-    ]
+# Recordings are committed to a public repo, so a frame carries only the fields
+# the reconciler reads. That keeps the file reviewable, and it means nothing
+# incidental in a GitHub or Devin payload ships along with it.
+
+
+def slim_issue(issue: dict) -> dict:
+    return {
+        "number": issue["number"],
+        "title": issue.get("title", ""),
+        "html_url": issue.get("html_url", ""),
+        "state": issue.get("state"),
+        "labels": [{"name": lab["name"]} for lab in issue.get("labels", [])],
+    }
+
+
+def slim_session(session: dict) -> dict:
+    return {
+        key: session.get(key)
+        for key in (
+            "session_id",
+            "title",
+            "url",
+            "status",
+            "status_detail",
+            "created_at",
+            "updated_at",
+            "tags",
+            "pull_requests",
+            "structured_output",
+            "acus_consumed",
+        )
+    }
+
+
+def slim_pull_request(pr: dict) -> dict:
+    return {
+        "number": pr.get("number"),
+        "html_url": pr.get("html_url"),
+        "state": pr.get("state"),
+        "merged_at": pr.get("merged_at"),
+        "head": {"ref": (pr.get("head") or {}).get("ref")},
+    }
 
 
 if __name__ == "__main__":

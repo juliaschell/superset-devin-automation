@@ -174,6 +174,21 @@ class Store:
         ).fetchall()
         return [dict(r) for r in rows]
 
+    def session_ids_for(self, issue_number: int) -> set[str]:
+        """Every session ever observed against this issue.
+
+        Attempts are counted from this rather than from "the session I am
+        looking at differs from the one on the row": two sessions against one
+        issue are returned in no particular order by the API, so that
+        comparison alternates and counts a fresh attempt on every poll.
+        """
+        rows = self.conn.execute(
+            "SELECT DISTINCT session_id FROM task_events"
+            " WHERE issue_number = ? AND session_id IS NOT NULL",
+            (issue_number,),
+        ).fetchall()
+        return {row["session_id"] for row in rows}
+
     def advance(self, issue_number: int, stage: str, detail: str | None = None) -> None:
         """Record that a task reached ``stage``.
 

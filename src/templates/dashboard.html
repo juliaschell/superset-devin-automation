@@ -116,15 +116,30 @@
       <div class="sub">Rejection rate is the signal to mute a class — a registry edit, not a code change.</div>
     </div>
     <div class="panel">
-      <h2>Cost</h2>
+      <h2>{% if metrics.cost %}Cost and pace{% else %}Pace{% endif %}</h2>
       <table>
-        <tr><td>build (planning + implementation)</td><td>{{ metrics.cost.build_acus }} ACU</td></tr>
+        {% if metrics.cost %}
         <tr><td>run</td><td>{{ metrics.cost.run_acus }} ACU</td></tr>
         <tr><td>per merged PR</td><td>{{ metrics.cost.acus_per_merged_pr or '—' }}</td></tr>
         <tr><td>per issue detected</td><td>{{ metrics.cost.acus_per_issue_detected or '—' }}</td></tr>
-        <tr><td>median time to PR</td><td>{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>
+        {% endif %}
+        <tr><td>median time to PR</td><td>
+          {% if config.live %}{{ metrics.median_time_to_pr_seconds or '—' }}s
+          {% else %}not measured in replay{% endif %}
+        </td></tr>
       </table>
-      <div class="sub">{{ metrics.cost.source }}.</div>
+      <div class="sub">
+        {% if not config.live %}
+          Replay: outcomes are from a recorded real run. Durations are omitted —
+          replay's clock is a frame per cycle, not the hours the run took.
+        {% endif %}
+        {% if metrics.cost %}
+          Measured per session via the v3 consumption API.
+        {% else %}
+          ACUs are omitted: the consumption API serves Enterprise accounts only,
+          and a cost this system cannot measure is not one it reports.
+        {% endif %}
+      </div>
     </div>
   </section>
 

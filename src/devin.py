@@ -7,13 +7,34 @@ Everything here is the v3 organization API, under service-user RBAC
 it is not a fallback. That is the better surface anyway: the v3 session object
 carries ``structured_output``, ``pull_requests`` and ``acus_consumed``, which is
 every field the reconciler needs from one call.
+
+With one exception. ``structured_output`` is only populated for a session
+created with a schema attached, and the API rejects a schema on a session an
+automation spawns — so for every session this system observes it is ``null``,
+and the prompt asks for the same JSON in the final message instead. ``report``
+reads it from whichever of the two is present.
+
+Cost has the same shape of problem. ``acus_consumed`` on the session object
+reads ``0.0`` for every session here, so ``session_acus`` asks the billing
+surface instead — ``consumption/daily/sessions/{id}``, which is the endpoint
+the usage dashboard is built on.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 import httpx
+
+JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+
+# A session's *first* message is the trigger payload, which is itself fenced
+# JSON — so "the newest JSON block" finds the GitHub event on any session that
+# has not reported yet, and files the webhook as a result. A report is one of
+# the two output schemas, and these keys are what distinguish them.
+REPORT_KEYS = frozenset({"outcome", "issues_filed", "classes_proposed"})
 
 
 class DevinError(RuntimeError):
@@ -30,7 +51,17 @@ class DevinClient:
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
+        # A transport failure is raised as DevinError like any other, so the one
+        # slow request in a cycle degrades that reading rather than aborting the
+        # pass: callers already treat DevinError as "we know less this cycle".
+        # Retried once, because the read timeouts seen here are transient.
+        for attempt in (1, 2):
+            try:
+                response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
+                break
+            except httpx.HTTPError as exc:
+                if attempt == 2:
+                    raise DevinError(f"{method} {path} → {exc!r}") from exc
         if response.status_code >= 400:
             raise DevinError(f"{method} {path} → {response.status_code}: {response.text[:300]}")
         return response.json() if response.content else None
@@ -51,6 +82,66 @@ class DevinClient:
 
     def get_session(self, session_id: str) -> dict[str, Any]:
         return self._request("GET", self._org_path(f"sessions/{session_id}"))
+
+    def messages(self, session_id: str) -> list[dict[str, Any]]:
+        data = self._request("GET", self._org_path(f"sessions/{session_id}/messages"))
+        return data.get("items", []) if isinstance(data, dict) else []
+
+    def report(self, session: dict[str, Any]) -> dict[str, Any]:
+        """What the session said it did, from wherever it managed to say it.
+
+        Costs one extra request per session, and only for sessions the platform
+        left without ``structured_output`` — which is all of them here. Parse
+        failures return ``{}`` rather than raising: a session that answered in
+        prose is a session we know less about, not a broken cycle. So does a
+        session still working, whose only JSON so far is its own trigger.
+        """
+        out = session.get("structured_output")
+        if isinstance(out, dict) and out:
+            return out
+        session_id = session.get("session_id")
+        if not session_id:
+            return {}
+        try:
+            items = self.messages(str(session_id))
+        except DevinError:
+            return {}
+        for item in reversed(items):
+            text = item.get("message")
+            if not isinstance(text, str):
+                continue
+            for block in reversed(JSON_BLOCK.findall(text)):
+                try:
+                    parsed = json.loads(block)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(parsed, dict) and REPORT_KEYS & parsed.keys():
+                    return parsed
+        return {}
+
+    def session_acus(self, session_id: str) -> float | None:
+        """What the session cost, from the billing surface rather than the session.
+
+        ``acus_consumed`` on the session object reads ``0.0`` even for sessions
+        that plainly did work, so the authoritative figure is the consumption
+        API — the same data the usage dashboard shows, keyed by session, ACUs
+        attributed to the day they were burned.
+
+        Returns ``None`` when the org reports no consumption rows at all, which
+        is a different statement from zero: ``0.0`` would claim the session was
+        free, and nothing here is entitled to claim that. Below the Enterprise
+        plan the endpoint answers but returns an empty series, so ``None`` is
+        the usual answer for a self-serve account.
+        """
+        ident = session_id if session_id.startswith("devin-") else f"devin-{session_id}"
+        try:
+            data = self._request("GET", self._org_path(f"consumption/daily/sessions/{ident}"))
+        except DevinError:
+            return None
+        if not isinstance(data, dict) or not data.get("consumption_by_date"):
+            return None
+        total = data.get("total_acus")
+        return float(total) if isinstance(total, int | float) else None
 
     # ------------------------------------------------------------ automations
 
@@ -78,6 +169,18 @@ class DevinClient:
 
     def update_automation(self, automation_id: str, spec: dict[str, Any]) -> dict[str, Any]:
         return self._request("PATCH", self._org_path(f"automations/{automation_id}"), json=spec)
+
+    # -------------------------------------------------------------- playbooks
+
+    def list_playbooks(self) -> list[dict[str, Any]]:
+        data = self._request("GET", self._org_path("playbooks"))
+        return data.get("items", []) if isinstance(data, dict) else []
+
+    def create_playbook(self, spec: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", self._org_path("playbooks"), json=spec)
+
+    def update_playbook(self, playbook_id: str, spec: dict[str, Any]) -> dict[str, Any]:
+        return self._request("PUT", self._org_path(f"playbooks/{playbook_id}"), json=spec)
 
     def close(self) -> None:
         self._client.close()

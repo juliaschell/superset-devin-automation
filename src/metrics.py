@@ -6,6 +6,7 @@ says what it measures and what it deliberately excludes.
 
 from __future__ import annotations
 
+import re
 import statistics
 import time
 from typing import Any
@@ -13,13 +14,16 @@ from typing import Any
 from .store import STAGES, Store
 
 VERIFIED_OUTCOME = "pr_opened_validated"
+# A class file writes its validate command with placeholders for the paths a
+# fix touches: `grep ... <files>`, `<file>`, `<scope>`.
+PLACEHOLDER = re.compile(r"<[a-z_]+>")
 
 
 def _median(values: list[float]) -> float | None:
     return round(statistics.median(values), 1) if values else None
 
 
-def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dict[str, Any]:
+def compute(store: Store) -> dict[str, Any]:
     tasks = store.tasks()
     total = len(tasks)
     funnel = store.furthest_stages()
@@ -43,6 +47,8 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         t["issue_number"] for t in needed_human
     }
     autonomous = [t for t in verified if t.get("failure_reason") is None]
+
+    attempts = [t["attempts"] for t in tasks if (t.get("attempts") or 0) > 0]
 
     time_to_pr = [
         t["pr_opened_at"] - t["detected_at"]
@@ -78,21 +84,20 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # Run cost is measured: the v3 session object reports acus_consumed, so this
-    # is the sum of what the remediation sessions actually burned. Build cost is
-    # the human-and-Devin work that produced the system, which no session in this
-    # tag carries, so it stays a configured figure and is labelled as one.
-    measured_acus = round(sum(t.get("acus") or 0.0 for t in tasks), 2)
-    run = measured_acus or run_acus
-    cost = {
-        "build_acus": build_acus,
-        "run_acus": run,
-        "acus_per_merged_pr": round(run / len(merged), 2) if merged else None,
-        "acus_per_issue_detected": round(run / total, 2) if total else None,
-        "source": "measured per session via the v3 API"
-        if measured_acus
-        else "configured (no session ACUs observed yet)",
-    }
+    # Cost is reported only where it was measured. Per-session ACUs come from
+    # the consumption API via the reconciler, which serves Enterprise accounts
+    # only — below that plan no task carries ACUs, and rather than substitute a
+    # typed-in figure or a zero, the section is absent everywhere it would show.
+    run = round(sum(t.get("acus") or 0.0 for t in tasks), 2) or None
+    cost = (
+        {
+            "run_acus": run,
+            "acus_per_merged_pr": round(run / len(merged), 2) if merged else None,
+            "acus_per_issue_detected": round(run / total, 2) if total else None,
+        }
+        if run
+        else None
+    )
 
     last = store.get_meta("last_reconciled")
     last_reconciled_age = round(time.time() - float(last), 1) if last else None
@@ -118,10 +123,10 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
         # specifies. Not necessarily wrong — but it is the difference between a
         # curated gate and an improvised one, so it is never hidden.
         "validation_mismatches": len([t for t in tasks if _validation_mismatch(t)]),
-        "attempts_per_issue": round(
-            sum(t.get("attempts") or 0 for t in tasks) / total, 2
-        )
-        if total
+        # Averaged over dispatched issues, not over everything detected: an
+        # issue nobody has worked yet is not an issue that took zero attempts.
+        "attempts_per_issue": round(sum(attempts) / len(attempts), 2)
+        if attempts
         else 0,
         "reworked_issues": len([t for t in tasks if (t.get("attempts") or 0) > 1]),
         "median_time_to_pr_seconds": _median(time_to_pr),
@@ -134,8 +139,20 @@ def compute(store: Store, build_acus: float = 0.0, run_acus: float = 0.0) -> dic
 
 
 def _validation_mismatch(task: dict[str, Any]) -> bool:
+    """Did the fix run a gate other than the one its class file specifies?
+
+    A class file writes its command as a template — ``grep ... <files>`` — and
+    the session fills the placeholder with the paths it touched. Substituting a
+    placeholder is the command being used as intended; anything else is a
+    session grading its own homework, which is the case worth counting.
+    """
     ran, registry = task.get("validate_command"), task.get("validate_registry")
-    return bool(ran and registry and ran.strip() != registry.strip())
+    if not ran or not registry:
+        return False
+    pattern = ".+".join(
+        re.escape(part) for part in PLACEHOLDER.split(registry.strip())
+    )
+    return re.fullmatch(pattern, ran.strip(), re.DOTALL) is None
 
 
 def _rate(numerator: int, denominator: int) -> float | None:
@@ -169,6 +186,11 @@ def prometheus(metrics: dict[str, Any]) -> str:
     emit("remediation_attempts_per_issue", metrics["attempts_per_issue"])
     emit("remediation_median_time_to_pr_seconds", metrics["median_time_to_pr_seconds"])
     emit("remediation_last_reconciled_seconds", metrics["last_reconciled_seconds_ago"])
+    # Absent rather than zero when the plan does not expose consumption: a
+    # scrape that never sees the series is clearer than one reporting free work.
+    if metrics["cost"]:
+        emit("remediation_run_acus", metrics["cost"]["run_acus"])
+        emit("remediation_acus_per_merged_pr", metrics["cost"]["acus_per_merged_pr"])
     for reason, count in metrics["failure_taxonomy"].items():
         emit("remediation_failures_total", count, f'{{reason="{reason}"}}')
     for name, bucket in metrics["per_class"].items():
@@ -178,7 +200,9 @@ def prometheus(metrics: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str) -> str:
+def report_markdown(
+    metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str, mode: str = "live"
+) -> str:
     """The honest write-up. Methodology first, because the numbers mean nothing
     without the sample size."""
     t = metrics["totals"]
@@ -196,7 +220,17 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         f"- Settled (outcome known): **{t['settled']}**; still in flight: **{t['detected'] - t['settled']}**",
         "- Success means a PR whose classification's validation command passed — not 'the session finished'.",
         "- No PR is auto-merged; the merged count reflects human decisions only.",
-        f"- ACU figures are read from the org usage page ({cost['source']}).",
+        "- Cost is reported only where the consumption API measured it, which "
+        "requires an Enterprise account; otherwise there is no cost section.",
+        *(
+            [
+                "- **Replay:** counts and outcomes are from a recorded real run. "
+                "Durations are omitted — replay's clock is a frame per cycle, not "
+                "the hours the run took."
+            ]
+            if mode != "live"
+            else []
+        ),
         "",
         "## Outcomes",
         "",
@@ -209,7 +243,11 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         f"| Validation-command mismatches | {metrics['validation_mismatches']} |",
         f"| Attempts per issue | {metrics['attempts_per_issue']} |",
         f"| Issues reworked at least once | {metrics['reworked_issues']} |",
-        f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |",
+        *(
+            [f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |"]
+            if mode == "live"
+            else []
+        ),
         f"| Merged by a human | {t['merged']} |",
         "",
         "## Funnel (cumulative — ever reached)",
@@ -232,14 +270,17 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
             f"| {name} | {bucket['volume']} | {pct(bucket['success_rate'])} | {pct(bucket['rejection_rate'])} |"
         )
 
+    if cost:
+        lines += [
+            "",
+            "## Cost",
+            "",
+            f"- Run: **{cost['run_acus']} ACUs**",
+            f"- Per merged PR: **{cost['acus_per_merged_pr']} ACUs**",
+            f"- Per issue detected: **{cost['acus_per_issue_detected']} ACUs**",
+        ]
+
     lines += [
-        "",
-        "## Cost",
-        "",
-        f"- Build (planning + implementation sessions): **{cost['build_acus']} ACUs**",
-        f"- Run: **{cost['run_acus']} ACUs**",
-        f"- Per merged PR: **{cost['acus_per_merged_pr']}**",
-        f"- Per issue detected: **{cost['acus_per_issue_detected']}**",
         "",
         "## Tasks",
         "",

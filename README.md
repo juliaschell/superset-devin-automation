@@ -54,10 +54,15 @@ interesting part of this design, so it is explicit:
 | Session dispatch | Devin Automation `start_session` | no webhook receiver, no HMAC, no dispatch loop |
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
 | Budget, concurrency, egress | Devin `limits` / `concurrency` / `net_policy` | native guardrails |
+| The remediation procedure | Devin playbook, referenced by the automation prompt | the prompt binds a repo and a trigger; the playbook says how the work is done, and is versioned here as `playbooks/remediate.md` |
 | Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the reconciler, and a missing one is recorded, not assumed |
 | Correlating attempts to an issue | **ours** | |
 | Longitudinal outcomes, cost, funnel | **ours** | Automations record *invocations*; the question here is *outcomes* |
 | Cleanup of rejected work | **ours** | |
+
+Where the platform behaved differently from its documentation, the measured
+behaviour and its consequence are written down in
+[`docs/devin-api.md`](docs/devin-api.md) rather than worked around quietly.
 
 That last block is the whole reason this repo exists. The Activity tab answers
 "did it fire". It cannot answer "did the fix hold, how long did it take, what
@@ -112,9 +117,10 @@ command differed from the registry's.
 ### Offline, no credentials
 
 ```bash
-make install
-make demo        # http://localhost:8000
+POLL_INTERVAL_SECONDS=3 docker compose up --build   # http://localhost:8000
 ```
+
+Or without Docker: `make install && make demo`.
 
 Replays a recorded real run — the actual issues filed and the actual session
 objects returned — through the same reconciler and metrics code that runs live.
@@ -130,7 +136,7 @@ SCAN_WEBHOOK_SECRET=... make scan   # fire the scan now instead of waiting for 0
 MODE=live make run      # dashboard + reconcile loop
 ```
 
-Or `docker compose up --build`.
+Or `MODE=live docker compose up --build` with the same variables in `.env`.
 
 Prerequisites, all one-time:
 
@@ -172,11 +178,22 @@ Definitions are choices, so they are stated rather than implied:
 - **Merged** counts human decisions only. Nothing here can merge.
 - **Rates are `null`, not `0`, when there is no data.** Zero reads as a
   measurement of failure.
-- **Run ACUs are measured, build ACUs are declared.** The v3 session object
-  reports `acus_consumed`, so run spend is summed from the sessions that did the
-  work. Build spend — the planning and implementation sessions that produced
-  this system — carries no such tag, so it is a configured figure and the
-  dashboard labels which is which. The payback question is about both.
+- **Cost is measured or it is absent — never typed in, never zero.** Run spend
+  is fetched per session from
+  `GET /v3/organizations/{org}/consumption/daily/sessions/{session_id}` — the
+  endpoint the usage dashboard is built on — not from the session object's
+  `acus_consumed` field, which reads `0.0` for every session observed here.
+  On this org that call authorizes and returns `total_acus: 0.0` with an empty
+  `consumption_by_date`, because **the consumption API is documented as
+  Enterprise-only**: Teams and self-serve accounts get no rows, and the
+  enterprise-scoped variant `403`s. That is a plan boundary, not a defect and
+  not a zero. An empty series is treated as unmeasured, and unmeasured cost is
+  not reported at all: the ACU rows vanish from the dashboard, the report has no
+  Cost section, and `/metrics` emits no ACU series. On an Enterprise account the
+  same code path reports measured per-session cost with no changes. There is
+  deliberately no `RUN_ACUS` knob — a figure read off a usage page by hand is a
+  claim about spend this system did not measure, and would sit in the report
+  indistinguishable from one it did.
 
 No outcome is fabricated in either direction — no engineered failures, no
 flattering denominators. Sample size is printed above every rate in the report.
@@ -252,7 +269,13 @@ automations/          checked-in automation definitions — the source of truth
   remediate.json      devin:ready label + changes_requested review
   prompts/            the prose, reviewable as prose in a diff
   schemas/            structured-output contracts
+playbooks/
+  remediate.md        the remediation procedure, held by the platform
+docs/
+  devin-api.md        what the API was asked for, and what it actually does
+  audit.md            four reviewers reading this system
 scripts/
+  apply_playbooks.py     create/update the playbooks over REST
   apply_automations.py   validate (--check) or create/update over REST
   run_scan.py            fire the scan now, natively
   record_run.py          capture a live run for offline replay

@@ -96,6 +96,24 @@ def structured(session: dict[str, Any]) -> dict[str, Any]:
     return out if isinstance(out, dict) else {}
 
 
+def scan_view(session: dict[str, Any]) -> dict[str, Any]:
+    """A scan session as the dashboard shows it: a scan belongs to no issue,
+    so nothing else in here would ever mention it."""
+    session_id = str(session.get("session_id") or "")
+    status, detail = _status(session)
+    out = structured(session)
+    return {
+        "session_id": session_id,
+        "status": f"{status}/{detail}" if detail else status,
+        "started_at": _started_at(session),
+        "url": f"https://app.devin.ai/sessions/{session_id.removeprefix('devin-')}",
+        "issues_filed": len(out["issues_filed"]) if isinstance(out.get("issues_filed"), list) else None,
+        "classes_proposed": (
+            len(out["classes_proposed"]) if isinstance(out.get("classes_proposed"), list) else None
+        ),
+    }
+
+
 def issue_number_for(session: dict[str, Any]) -> int | None:
     """Which issue a session is working on, or None while it has not said yet."""
     value = structured(session).get("issue_number")
@@ -255,6 +273,7 @@ class Watcher:
     def sync_sessions(self) -> int:
         """What Devin is doing about it. One call for every in-flight session."""
         sessions = self.devin.list_sessions(tags=[self.config.session_tag])
+        scans: list[dict[str, Any]] = []
         # Oldest first, so when an issue has several attempts the row ends the
         # cycle describing the newest one.
         for session in sorted(sessions, key=lambda s: _started_at(s) or 0.0):
@@ -266,6 +285,9 @@ class Watcher:
             session_id = session.get("session_id")
             number = issue_number_for(session)
             if number is None:
+                # A scan works on the repo, not on an issue, so it is shown as
+                # itself instead of being filed under a task that cannot exist.
+                scans.append(scan_view(session))
                 if session_id not in self._unattached:
                     self._unattached.add(str(session_id))
                     self.store.log(
@@ -310,6 +332,7 @@ class Watcher:
                 )
                 self.store.upsert_task(number, settled_at=settled)
             self.store.advance(number, stage)
+        self.store.set_scans(sorted(scans, key=lambda s: s["started_at"] or 0.0, reverse=True)[:5])
         return len(sessions)
 
     def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:

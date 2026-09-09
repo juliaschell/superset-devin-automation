@@ -43,8 +43,9 @@ registry, and creates the playbook and both automations over REST scoped to that
 fork. It is idempotent — re-running reconciles rather than duplicates, so prefer
 re-running it to hand-repairing anything it created.
 
-One thing you cannot do for them: connecting their GitHub org to Devin
-(https://app.devin.ai/settings) is a UI grant with no API. Until it is done,
+One thing you cannot do for them: adding the fork to Devin's GitHub access
+(https://app.devin.ai/settings/integrations/github → Configure / Manage
+repositories) is a UI grant with no API. Until it is done,
 label and review events never reach the automations and the loop looks silently
 idle. Tell them, and check it first if nothing fires.
 

@@ -206,6 +206,17 @@ def test_an_unattached_session_is_logged_once_not_once_per_cycle(tmp_path):
     assert len([e for e in store.events() if e["kind"] == "session_unattached"]) == 1
 
 
+def test_a_scan_is_visible_even_though_it_has_no_issue(tmp_path):
+    """Until a scan files something there is no task, and a dashboard showing
+    nothing is indistinguishable from one that is broken."""
+    store, _, watcher = build(tmp_path)
+    watcher.devin = FakeDevin([session(None, session_id="devin-abc")])
+    watcher.cycle()
+    (scan,) = store.scans()
+    assert scan["session_id"] == "devin-abc"
+    assert scan["url"] == "https://app.devin.ai/sessions/abc"
+
+
 def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):
     store, github, watcher = build(
         tmp_path,

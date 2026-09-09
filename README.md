@@ -27,7 +27,9 @@ The system includes a Devin automation to scan for problems and a separate autom
 $ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TOKEN=<token>
 ```
 
-- `REPO` — the fork to work on, created for you if it does not exist yet
+- `REPO` — the fork to work on, created for you if it does not exist yet. GitHub
+  allows one fork of a repo per account, so if you already fork Superset, give
+  that name here
 - `DEVIN_KEY` — a Devin **service-user** key, Admin role
 - `DEVIN_ORG` — your Devin org id, `org-…`
 - `GITHUB_TOKEN` — the `repo` scope. Nothing here ever merges
@@ -36,8 +38,11 @@ The container will boot-strap as needed (create the fork, modify git settings, s
 
 3. Configure Devin's GitHub access: 
 
-Bootstrap finishes by printing a link to connect the fork to Devin. The UI grant
-is required for label and review events to trigger Devin Automations.
+Bootstrap finishes by printing this as a boxed reminder, because it is the one
+step with no API: at https://app.devin.ai/settings/integrations/github, choose
+Configure / Manage repositories and add your fork. Until you do, Devin cannot
+read the code and label events reach no automation, so the loop looks idle. The
+dashboard repeats the reminder until the first session starts.
 
 4. Start the scanner by hand: 
 
@@ -48,6 +53,10 @@ $ make scan
 ```
 
 If not manually kicked, it would run automatically at 2:00PT
+
+`make scan` only files the issue whose label is the trigger, so the scan itself
+starts on Devin's side: watch it under **Scans** on the dashboard, not in the
+`make up` terminal, which logs only what it observes.
 
 The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 

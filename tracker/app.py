@@ -29,7 +29,10 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
 def build_watcher(store: Store) -> Watcher:
     if missing := config.missing():
-        raise SystemExit(f"missing required configuration: {', '.join(missing)} (export them before starting)")
+        raise SystemExit(
+            f"missing required configuration: {', '.join(missing)} — pass them to make, "
+            "e.g. make up REPO=you/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=..."
+        )
     devin = DevinClient(config.devin_api_key, config.devin_org_id, config.devin_api_base)
     github = GitHubClient(config.github_token, config.repo, config.github_api_base)
     return Watcher(store, devin, github, config)

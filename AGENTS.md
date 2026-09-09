@@ -18,21 +18,22 @@ Ask once, together, and do not guess or substitute your own:
 | Variable | What it is |
 |---|---|
 | `REPO` | the Superset fork to work on, as `owner/name`. It need not exist yet |
-| `DEVIN_API_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
-| `DEVIN_ORG_ID` | their org id |
+| `DEVIN_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
+| `DEVIN_ORG` | their org id |
 | `GITHUB_TOKEN` | `repo` + issues + pull requests, write. Not merge |
 
-Export them in your shell. There is no file to create, and no `.env` to leave
-lying around. Never print them, never commit them, and do not pass them as
-command-line arguments — a command line is visible in `ps` and kept in history.
+There is no file to create and no `.env` to leave lying around. Never print them
+and never commit them.
 
 ## Running it
 
 ```bash
-export REPO=owner/superset DEVIN_API_KEY=... DEVIN_ORG_ID=... GITHUB_TOKEN=...
-make up      # bootstraps, then serves http://localhost:8000
+make up REPO=owner/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=...
 make scan    # optional: run a scan now, not at 02:00 PT
 ```
+
+That serves http://localhost:8000. `export`ing the four instead works and keeps
+the secrets out of shell history and `ps`; on a shared machine, prefer it.
 
 `make up` runs `python -m bootstrap` first, which forks Superset if
 `REPO` is missing, enables Issues, creates the labels, seeds the classification

@@ -15,20 +15,23 @@ fork, and a human owns it.
 
 ## How to run
 
-Two commands, whether you run them or your own Devin does.
+One command, whether you run it or your own Devin does.
 
 ```bash
-export REPO=you/superset      # created by forking Superset if it does not exist
-export DEVIN_API_KEY=...      # service user, Admin role
-export DEVIN_ORG_ID=...
-export GITHUB_TOKEN=...       # repo, issues, pull requests. Not merge.
-make up                       # http://localhost:8000
-make scan                     # optional: run now instead of waiting for 02:00 PT
+make up REPO=you/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=...
 ```
 
-There is no file to copy or fill in. The values are exported rather than passed
-as `make up REPO=...` because three of them are secrets, and a command line ends
-up in shell history and in `ps`.
+- `REPO` — the fork to work on, created for you if it does not exist yet
+- `DEVIN_KEY` — a Devin **service-user** key, Admin role
+- `DEVIN_ORG` — your Devin org id
+- `GITHUB_TOKEN` — repo, issues, pull requests. Not merge
+
+That serves the dashboard on http://localhost:8000. `make scan` — same four
+values — runs a scan now instead of waiting for 02:00 PT.
+
+There is no file to copy or fill in. `export`ing the four instead works and
+keeps the three secrets out of shell history and `ps`; on a shared machine,
+prefer it.
 
 `make up` bootstraps before it serves, idempotently: forks Superset, enables
 Issues, creates the labels, seeds the classification registry, and creates the
@@ -51,8 +54,8 @@ To point your own Devin at this instead, give it the repo and this prompt;
 > Set up this repo against a fresh fork of Apache Superset in my org, run it, and
 > show me the dashboard. Follow its AGENTS.md. Never merge anything.
 
-Without Docker: `make install && make bootstrap && make run`. Every Make target
-says who it is for in the comment above it.
+Without Docker: `make install`, then `make bootstrap` and `make run` with the
+same four values. Every Make target says who it is for in the comment above it.
 
 ---
 

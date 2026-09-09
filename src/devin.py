@@ -170,5 +170,17 @@ class DevinClient:
     def update_automation(self, automation_id: str, spec: dict[str, Any]) -> dict[str, Any]:
         return self._request("PATCH", self._org_path(f"automations/{automation_id}"), json=spec)
 
+    # -------------------------------------------------------------- playbooks
+
+    def list_playbooks(self) -> list[dict[str, Any]]:
+        data = self._request("GET", self._org_path("playbooks"))
+        return data.get("items", []) if isinstance(data, dict) else []
+
+    def create_playbook(self, spec: dict[str, Any]) -> dict[str, Any]:
+        return self._request("POST", self._org_path("playbooks"), json=spec)
+
+    def update_playbook(self, playbook_id: str, spec: dict[str, Any]) -> dict[str, Any]:
+        return self._request("PUT", self._org_path(f"playbooks/{playbook_id}"), json=spec)
+
     def close(self) -> None:
         self._client.close()

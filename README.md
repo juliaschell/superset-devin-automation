@@ -54,10 +54,15 @@ interesting part of this design, so it is explicit:
 | Session dispatch | Devin Automation `start_session` | no webhook receiver, no HMAC, no dispatch loop |
 | Replying on the issue/PR | Devin `post_response` | no status-comment code of ours |
 | Budget, concurrency, egress | Devin `limits` / `concurrency` / `net_policy` | native guardrails |
+| The remediation procedure | Devin playbook, referenced by the automation prompt | the prompt binds a repo and a trigger; the playbook says how the work is done, and is versioned here as `playbooks/remediate.md` |
 | Result shape | requested in the prompt | the API rejects a schema on a spawned session, so it is advisory — every structured field is optional to the reconciler, and a missing one is recorded, not assumed |
 | Correlating attempts to an issue | **ours** | |
 | Longitudinal outcomes, cost, funnel | **ours** | Automations record *invocations*; the question here is *outcomes* |
 | Cleanup of rejected work | **ours** | |
+
+Where the platform behaved differently from its documentation, the measured
+behaviour and its consequence are written down in
+[`docs/devin-api.md`](docs/devin-api.md) rather than worked around quietly.
 
 That last block is the whole reason this repo exists. The Activity tab answers
 "did it fire". It cannot answer "did the fix hold, how long did it take, what
@@ -263,7 +268,13 @@ automations/          checked-in automation definitions — the source of truth
   remediate.json      devin:ready label + changes_requested review
   prompts/            the prose, reviewable as prose in a diff
   schemas/            structured-output contracts
+playbooks/
+  remediate.md        the remediation procedure, held by the platform
+docs/
+  devin-api.md        what the API was asked for, and what it actually does
+  audit.md            four reviewers reading this system
 scripts/
+  apply_playbooks.py     create/update the playbooks over REST
   apply_automations.py   validate (--check) or create/update over REST
   run_scan.py            fire the scan now, natively
   record_run.py          capture a live run for offline replay

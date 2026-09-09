@@ -15,9 +15,13 @@ run:
 
 # Validate the automation payloads against the live API. Creates nothing.
 validate:
+	python -m scripts.apply_playbooks --check
 	python -m scripts.apply_automations --check
 
+# Playbooks first: an automation prompt references its playbook by id, so the
+# playbook has to exist before the automation that points at it.
 apply:
+	python -m scripts.apply_playbooks
 	python -m scripts.apply_automations
 
 scan:

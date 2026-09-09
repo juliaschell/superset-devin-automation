@@ -26,9 +26,14 @@ from src.devin import DevinClient, DevinError  # noqa: E402
 ROOT = Path(__file__).resolve().parent.parent
 AUTOMATIONS = ROOT / "automations"
 
-DEFINITIONS = {
+DEFINITIONS: dict[str, dict[str, str]] = {
     "scan": {"spec": "scan.json", "prompt": "scan.md", "schema": "scan_output.json"},
-    "remediate": {"spec": "remediate.json", "prompt": "remediate.md", "schema": "remediate_output.json"},
+    "remediate": {
+        "spec": "remediate.json",
+        "prompt": "remediate.md",
+        "schema": "remediate_output.json",
+        "playbook": "Superset remediation",
+    },
 }
 
 
@@ -40,22 +45,31 @@ def strip_docs(value: Any) -> Any:
     return value
 
 
-def render(role: str, repo: str, max_issues: int) -> dict[str, Any]:
+def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) -> dict[str, Any]:
     files = DEFINITIONS[role]
     spec = json.loads((AUTOMATIONS / files["spec"]).read_text())
     prompt = (AUTOMATIONS / "prompts" / files["prompt"]).read_text()
-    schema = json.loads((AUTOMATIONS / "schemas" / files["schema"]).read_text())
 
     prompt = prompt.replace("{{REPO}}", repo).replace("{{MAX_ISSUES_PER_RUN}}", str(max_issues))
-    # The schema goes in the prompt because the automations API has no field to
-    # attach one to a spawned session. The shape is therefore requested, not
-    # enforced — so the reconciler treats every structured-output field as
-    # optional and records a parse failure rather than assuming it is present.
-    prompt += (
-        "\n\n## Output schema\n\nReturn structured output matching exactly:\n\n```json\n"
-        + json.dumps(schema, indent=2)
-        + "\n```\n"
-    )
+    if title := files.get("playbook"):
+        # The platform resolves `@playbook:<id>` in the prompt into the action's
+        # playbook_id, which is read-only; the id is looked up by title so the
+        # checked-in definition stays free of platform identifiers.
+        prompt = f"@playbook:{playbook_ids[title]}\n\n{prompt}"
+    if schema_file := files.get("schema"):
+        # The schema goes in the prompt because nothing else carries it to the
+        # session: the automations API has no field to attach one to a spawned
+        # session, and a playbook's own `structured_output_schema` was measured
+        # not to reach a session that arrives through a prompt token. The shape
+        # is therefore requested, not enforced — so the reconciler treats every
+        # structured-output field as optional and records a parse failure rather
+        # than assuming it is present.
+        schema = json.loads((AUTOMATIONS / "schemas" / schema_file).read_text())
+        prompt += (
+            "\n\n## Output schema\n\nReturn structured output matching exactly:\n\n```json\n"
+            + json.dumps(schema, indent=2)
+            + "\n```\n"
+        )
 
     body = json.dumps(spec)
     body = body.replace("{{REPO}}", repo)
@@ -125,6 +139,7 @@ def main() -> int:
     try:
         schemas = client.automation_schemas()
         existing = {a.get("name"): a for a in client.list_automations()}
+        playbook_ids = {p["title"]: p["playbook_id"] for p in client.list_playbooks()}
     except DevinError as exc:
         print(f"✗ {exc}", file=sys.stderr)
         return 2
@@ -132,7 +147,15 @@ def main() -> int:
     failed = False
 
     for role in roles:
-        spec = render(role, args.repo, args.max_issues)
+        needed = DEFINITIONS[role].get("playbook")
+        if needed and needed not in playbook_ids:
+            print(
+                f"✗ {role}: playbook {needed!r} does not exist; run apply_playbooks first",
+                file=sys.stderr,
+            )
+            failed = True
+            continue
+        spec = render(role, args.repo, args.max_issues, playbook_ids)
         name = spec["name"]
         problems = check_against_schemas(spec, schemas)
         if problems:

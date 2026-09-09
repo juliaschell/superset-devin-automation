@@ -10,7 +10,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from scripts.apply_automations import render
+import pytest
+
+from scripts.apply_automations import render as _render
+
+PLAYBOOKS = {"Superset remediation": "playbook-test"}
+
+
+def render(role: str, repo: str, max_issues: int) -> dict:
+    return _render(role, repo, max_issues, PLAYBOOKS)
 
 ROOT = Path(__file__).resolve().parent.parent
 REPO = "juliaschell/superset"
@@ -87,3 +95,16 @@ def test_structured_output_schema_is_stated_in_the_prompt():
     action = next(a for a in spec["actions"] if a["type"] == "start_session")
     assert "structured_output_schema" not in action["session"]
     assert "outcome" in action["prompt"]
+
+
+def test_the_remediator_is_bound_to_its_playbook():
+    """`session.playbook_id` is read-only on the API: it derives from an
+    `@playbook:<id>` token at the head of the prompt. Losing the token silently
+    unbinds the procedure and the automation still runs."""
+    prompt = render("remediate", REPO, 8)["actions"][0]["prompt"]
+    assert prompt.startswith("@playbook:playbook-test")
+
+
+def test_a_missing_playbook_fails_loudly():
+    with pytest.raises(KeyError):
+        _render("remediate", REPO, 8, {})

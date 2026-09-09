@@ -1,9 +1,9 @@
 # Superset remediation
 
 A nightly automation that finds problem classes in a fork of
-[Apache Superset](https://github.com/apache/superset), files real git bugs, fixes them, proves the fix with a human-approved validation command, and opens a PR with the proposed fix.
+[Apache Superset](https://github.com/apache/superset), files real bugs as GitHub issues, fixes them, proves the fix with a human-approved validation command, and opens a PR with the proposed fix.
 
-The system includes a Devin automation to scan for problems and a separate automation to remdiate the problems. An external service polls both processes and records data and metrics in an SQLite file. 
+The system includes a Devin automation to scan for problems and a separate automation to remediate them. A small service alongside them polls Devin and GitHub and records data and metrics in an SQLite file.
 
 **No pull request is ever merged automatically.**
 
@@ -17,26 +17,31 @@ The system includes a Devin automation to scan for problems and a separate autom
 
 - a **service-user** API key with the Admin role —
   https://app.devin.ai/settings/org-service-users 
-- A GitHub API token <fill in link or click-instructions here> 
+- A GitHub API token with `repo` scope —
+  https://github.com/settings/tokens (Developer settings → Personal access
+  tokens). Issues and pull requests: write
 
 2. Stand up the container:
 
 ```bash
-$ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_name> GITHUB_TOKEN=<token>
+$ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TOKEN=<token>
 ```
 
 - `REPO` — the fork to work on, created for you if it does not exist yet
 - `DEVIN_KEY` — a Devin **service-user** key, Admin role
-- `DEVIN_ORG` — your Devin org id
+- `DEVIN_ORG` — your Devin org id, `org-…`
 - `GITHUB_TOKEN` — repo, issues, pull requests. Not merge
 
 The container will boot-strap as needed (create the fork, modify git settings, seed the classification registry, and create the playbook and automations for the fork)
 
 3. Configure Devin's GitHub access: 
 
-If needed, bootstrap will print a link for you to enable label and review events 
+Bootstrap finishes by printing a link to connect the fork to Devin. The UI grant
+is required for label and review events to trigger Devin Automations.
 
 4. Start the scanner by hand: 
+
+In a second terminal, since `make up` holds the first one:
 
 ```bash
 $ make scan
@@ -44,7 +49,7 @@ $ make scan
 
 If not manually kicked, it would run automatically at 2:00PT
 
-The scanner will create git issues which will trigger the remediation automation to post fix PRs
+The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 
 A metrics dashboard will be available at http://localhost:8000
 
@@ -111,26 +116,30 @@ Definitions are choices, so they are stated rather than implied:
      ┌──────────────────┐   finding fits no class    ★ PR proposing
      │      scanner     │ ─────────────────────────▶    a new class
      │      (Devin)     │                                    │
-     └────────┬─────────┘                                    │
-              │ finding fits an active class                 │
+     └────────┬─────────┘                                    ▼
+              │ finding fits an active class            human: review
               ▼                                              │
-     ★ GitHub issue,                                         ▼
-       labelled devin:ready                             human: review 
+     ★ GitHub issue,                                         │
+       labelled devin:ready                                  │
               │                                              │
               ▼                                              │
-     ┌──────────────────┐ ◀───────────────────────────────---┘
-     │ remediate session│
-     │      (Devin)     │
-     └────────┬─────────┘
-              ▼
-     ★ Remediation PR 
-              │
-      ┌───────┴─────────────────┬────────────────────────────────┐
-      ▼                         ▼                                ▼
-  human: merge       human: request changes      human: label issue devin:rejected
-                       → attempt 2 on the          → PR, branch and issue closed
-                         same branch                
-                                                      
+     ┌──────────────────┐                                    │
+     │ remediate session│                                    │
+     │      (Devin)     │                                    │
+     └────────┬─────────┘                                    │
+              ▼                                              │
+     ★ Remediation PR                                        │
+              │                                              │
+      ┌───────┴─────────────┬──────────────────────┐         │
+      ▼                     ▼                      ▼         │
+  human: merge   human: request changes   human: label issue  │
+                  → attempt 2 on the      devin:rejected      │
+                    same branch           → PR, branch and    │
+                                            issue closed      │
+                                                              │
+  merged classifications ◀────────────────────────────────────┘
+        ├──▶ scanner:    what counts as a bug, and how many at a time
+        └──▶ remediator: how to fix it, and the command that proves it
 
   Throughout: the tracker polls Devin and GitHub, records every transition,
   and serves ★ the dashboard, ★ report.md and ★ /metrics.
@@ -158,9 +167,11 @@ need rewriting, that is a bug in the scan prompt, not a step in the process.
 
 ### Adding a classification by hand
 
-Commit a file to `.devin/classifications/` in the fork with the frontmatter
-below. Nothing else is required — the next scan reads the directory. This is also
-how you change what a class means.
+Commit a file to `.devin/classifications/` in the fork in the shape below.
+Nothing else is required — the next scan reads the directory. This is also how
+you change what a class means. If you have an agent write it, point it at
+[`AGENTS.md`](AGENTS.md), which carries the rules a `validate:` command has to
+satisfy.
 
 ---
 
@@ -185,9 +196,20 @@ status: active          # active | muted | declined
 severity: high          # critical | high | medium | low
 max_open: 3             # cap on simultaneously open issues of this class
 validate: cd superset-frontend && npm audit --audit-level=high
+---
+
+# One-line title
+
+## Recognise      what a real instance looks like, and what to exclude
+## Fix            the approach, and what must not change
+## Validate       what the command above does and does not prove
+## Seed finding   the example that motivated the class, file and line
 ```
 
-`validate:` is the load-bearing field. Every fix in the class is held to it, and the dashboard flags any run whose actual command differed from it, so a session cannot quietly grade its own homework. It must be non-interactive, must be capable of failing on a bad fix, and should be the repo's own tooling. 
+`validate:` is the load-bearing field: every fix in the class is held to it, and
+the dashboard flags any run whose actual command differed, so a session cannot
+quietly grade its own homework. What makes a good one is in
+[`AGENTS.md`](AGENTS.md).
 
 ---
 

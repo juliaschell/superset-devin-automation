@@ -29,11 +29,13 @@ and never commit them.
 
 ```bash
 make up REPO=owner/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=...
-make scan    # optional: run a scan now, not at 02:00 PT
+make scan    # optional, second terminal: run a scan now, not at 02:00 PT
 ```
 
 That serves http://localhost:8000. `export`ing the four instead works and keeps
 the secrets out of shell history and `ps`; on a shared machine, prefer it.
+`make scan` goes through the running container, so it needs nothing installed
+and no values re-passed.
 
 `make up` runs `python -m bootstrap` first, which forks Superset if
 `REPO` is missing, enables Issues, creates the labels, seeds the classification
@@ -73,3 +75,17 @@ proposals — not to add classes yourself.
 - The classification registry lives in the **fork**, not here, and belongs to
   the human. Propose via PR; never move a file out of `_declined/`.
 - `make check` runs ruff, mypy and the tests. Keep it green.
+
+## Writing a classification, if you are asked to
+
+The file's shape is in the README. Everything load-bearing is in `validate:`,
+the command every fix in the class is held to, so:
+
+- it must run non-interactively and must be able to **fail** on a bad fix — a
+  command that always passes makes a broken fix look verified;
+- `<file>`, `<files>` and `<scope>` in it are substituted with the issue's paths
+  before the session runs it, which is why the tracker's "different command"
+  check does not fire on them;
+- never `pre-commit run`: its hook environments install by cloning from
+  github.com, which the remediation sandbox's git proxy refuses, so the gate
+  fails for a reason unrelated to the fix. Call the underlying tool directly.

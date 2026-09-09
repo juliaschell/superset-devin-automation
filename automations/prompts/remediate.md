@@ -35,6 +35,14 @@ changed the problem statement as well as the review.
    repo's conventional-commit title convention. The PR body must state the
    validation command and its result, and link the issue with `Closes #N`.
 
+   If `git commit` cannot complete because pre-commit fails to install its hook
+   environments, do not abandon a fix that already passed its gate: push the same
+   change through the GitHub API instead and say in the PR body that local hooks
+   could not run, so the PR's CI is the only style gate on it. Never reach for
+   `--no-verify` or edit `.pre-commit-config.yaml` to get past it — the point is
+   to skip the *unavailable tooling*, not the checks it stands for. Report
+   `outcome: "blocked"` only when the fix itself could not be completed.
+
 ## Structured output
 
 Return structured output matching the schema you were given. `validate_command`

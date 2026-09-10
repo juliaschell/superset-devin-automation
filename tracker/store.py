@@ -284,3 +284,12 @@ class Store:
     def sessions(self) -> list[dict[str, Any]]:
         raw = self.get_meta("sessions")
         return json.loads(raw) if raw else []
+
+    def set_waiting(self, items: list[dict[str, Any]]) -> None:
+        """The open PRs waiting on a human, as last seen on GitHub. Cached for
+        the same reason as sessions: GitHub is the record, this is the view."""
+        self.set_meta("waiting", json.dumps(items))
+
+    def waiting(self) -> list[dict[str, Any]]:
+        raw = self.get_meta("waiting")
+        return json.loads(raw) if raw else []

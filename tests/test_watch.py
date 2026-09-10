@@ -16,6 +16,7 @@ from tracker.watch import (
     session_view,
     stage_for_session,
     task_update_from_session,
+    waiting_item,
 )
 
 
@@ -50,7 +51,16 @@ class FakeGitHub:
     def __init__(self, issues: dict[str, list[dict[str, Any]]] | None = None) -> None:
         self.issues = issues or {}
         self.pull_requests: dict[int, dict[str, Any]] = {}
+        self.open_prs: list[dict[str, Any]] = []
+        self.paths: dict[int, list[str]] = {}
         self.calls: list[str] = []
+
+    def open_pull_requests(self) -> list[dict[str, Any]]:
+        return self.open_prs
+
+    def pull_request_paths(self, number: int) -> list[str]:
+        self.calls.append(f"files:{number}")
+        return self.paths.get(number, [])
 
     def issues_with_label(self, label: str, state: str = "all") -> list[dict[str, Any]]:
         return self.issues.get(label, [])
@@ -307,6 +317,51 @@ def test_a_pr_on_another_fork_is_never_asked_about_by_number(tmp_path):
     github.pull_requests[3] = {"state": "closed", "merged_at": "2026-09-01T00:00:00Z", "head": {}}
     assert watcher.pr_facts("https://github.com/o/old/pull/3").state is None
     assert watcher.pr_facts("https://github.com/o/r/pull/3").state == "merged"
+
+
+def pr(number: int, **extra: Any) -> dict[str, Any]:
+    return {
+        "number": number,
+        "title": f"pr {number}",
+        "html_url": f"https://github.com/o/r/pull/{number}",
+        "created_at": "2026-09-01T00:00:00Z",
+        "user": {"login": "devin-ai-integration[bot]"},
+        **extra,
+    }
+
+
+def test_an_open_pr_says_which_decision_it_is_waiting_for():
+    """Merge, rework and reject are different jobs, and the difference is
+    whether the class's own validation command passed."""
+    task = {"issue_number": 4, "classification": "cypress-spec-migration", "validation_passed": 1}
+    assert waiting_item(pr(1), task, None)["do"].startswith("merge it")
+    assert "rework" in waiting_item(pr(1), {**task, "validation_passed": 0}, None)["do"]
+
+    proposal = waiting_item(pr(2), None, [".devin/classifications/a.md"])
+    assert proposal["kind"] == "class proposal"
+    assert "switch detection on" in proposal["do"]
+
+
+def test_the_human_queue_is_read_from_github_not_from_the_funnel(tmp_path):
+    """A PR merged or closed in the browser has to leave this list, and a
+    class proposal belongs to no task at all."""
+    store, github, watcher = build(tmp_path)
+    store.upsert_task(4, pr_url="https://github.com/o/r/pull/1", validation_passed=1)
+    github.open_prs = [
+        pr(1),
+        pr(2, title="propose classes"),
+        pr(3, title="my own work", user={"login": "a-human"}),
+    ]
+    github.paths[2] = [".devin/classifications/direct-antd-import.md"]
+
+    watcher.sync_waiting()
+    assert [w["kind"] for w in store.waiting()] == ["fix for #4", "class proposal"]
+    # A known fix costs no extra call: the task already says what it is.
+    assert github.calls == ["files:2"]
+
+    github.open_prs = []
+    watcher.sync_waiting()
+    assert store.waiting() == []
 
 
 def test_scan_summary_says_so_when_a_scan_found_nothing():

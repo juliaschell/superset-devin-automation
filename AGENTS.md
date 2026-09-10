@@ -35,8 +35,10 @@ make scan    # optional, second terminal: run a scan now, not at 02:00 PT
 That serves http://superset.localhost — any `*.localhost` name resolves to
 127.0.0.1 in a browser, so there is no hosts file to edit. If something already
 holds port 80, `make up DASHBOARD_PORT=8000 ...` moves it to
-http://superset.localhost:8000. `export`ing the four instead works and keeps
-the secrets out of shell history and `ps`; on a shared machine, prefer it.
+http://superset.localhost:8000. Anything exported already is used as it is, so
+pass only what the environment is missing — `export`ing all four (under
+`DEVIN_API_KEY` and `DEVIN_ORG_ID`) keeps the secrets out of shell history and
+`ps`, and on a shared machine that is the one to prefer.
 `make scan` goes through the running container, so it needs nothing installed
 and no values re-passed.
 

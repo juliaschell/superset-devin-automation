@@ -34,6 +34,11 @@ $ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TO
 - `DEVIN_ORG` — your Devin org id, `org-…`
 - `GITHUB_TOKEN` — the `repo` scope. Nothing here ever merges
 
+Anything already exported is used as it is, so `make up` on its own is enough
+when `REPO`, `DEVIN_API_KEY`, `DEVIN_ORG_ID` and `GITHUB_TOKEN` are in the
+environment — and only what is still missing has to be passed. Prefer that: a
+command line lands in shell history and in `ps`.
+
 The container will boot-strap as needed (create the fork, modify git settings, seed the classification registry, and create the playbook and automations for the fork)
 
 3. Configure Devin's GitHub access: 

@@ -104,6 +104,15 @@ Choosing those defaults is part of the job, not a formality:
   on a fixed one, and if the best available command proves less than the class
   claims, say so in the `## Validate` prose rather than leaving the gap implicit.
 
+  Absence of the pattern plus a clean type check is not evidence that the code
+  still does what it did. So look for tests covering the files this class
+  touches — a colocated `*.test.tsx`, a `tests/unit_tests/` module for the same
+  path — and if they exist, run them in the command as well as the check that
+  the pattern is gone. Scope it to those tests, not the suite: the gate runs on
+  every fix in the class, and a full run is unaffordable nightly. If nothing
+  covers them, do not invent a test file to point at — write in `## Validate`
+  that behaviour is unproven and the reviewer is the check.
+
 Say in the PR body how to reject it without a second round trip: move the file
 to `_declined/`, set `status: declined`, add a `## Why declined` note, and merge
 that. Rejecting on the proposal PR is what keeps the directory complete —

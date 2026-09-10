@@ -108,6 +108,10 @@ the command every fix in the class is held to, so:
 
 - it must run non-interactively and must be able to **fail** on a bad fix — a
   command that always passes makes a broken fix look verified;
+- if tests cover the files the class touches, run them in it, scoped to those
+  files — no pattern check plus type check proves the code still behaves the
+  same, and only a test does. Where nothing covers them, say so in the class's
+  `## Validate` section instead of implying a gate the command does not give;
 - `<file>`, `<files>` and `<scope>` in it are substituted with the issue's paths
   before the session runs it, which is why the tracker's "different command"
   check does not fire on them;

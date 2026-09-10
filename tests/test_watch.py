@@ -9,9 +9,12 @@ from tracker.watch import (
     Watcher,
     belongs_to,
     duration,
+    epoch,
     failure_reason,
+    fork_identity,
     human_status,
     issue_number_for,
+    predates,
     scan_summary,
     session_view,
     stage_for_session,
@@ -116,6 +119,25 @@ def test_issue_number_from_structured_output_then_tag():
     assert issue_number_for(session(7)) == 7
     assert issue_number_for({"tags": ["issue-9"], "structured_output": {}}) == 9
     assert issue_number_for({"tags": [], "structured_output": {}}) is None
+
+
+def test_a_session_older_than_the_fork_is_not_this_fork_s():
+    """A `repo:` tag names a fork but not which one, so a name reused after a
+    delete replays the old fork's scans against issues that no longer exist."""
+    assert predates({"created_at": "2026-09-01T00:00:00Z"}, born=None) is False
+    old = {"created_at": "2026-09-01T00:00:00Z"}
+    new = {"created_at": "2026-09-10T00:00:00Z"}
+    born = epoch("2026-09-05T00:00:00Z")
+    assert predates(old, born) is True
+    assert predates(new, born) is False
+
+
+def test_unreachable_github_is_not_evidence_the_fork_changed():
+    class Broken:
+        def repository(self):
+            raise RuntimeError("network")
+
+    assert fork_identity(Broken()) == (None, None)
 
 
 def test_finished_session_without_a_pr_is_not_success():

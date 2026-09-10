@@ -93,6 +93,30 @@ def test_a_new_fork_starts_from_an_empty_database(tmp_path):
     assert [e["kind"] for e in store.events()] == ["repo_changed"]
 
 
+def test_a_fork_remade_under_the_same_name_is_a_different_fork(tmp_path):
+    """The name is not the repository: deleting a fork and forking again gives
+    issue and PR numbers that start over, so the old funnel measures nothing."""
+    store = make(tmp_path)
+    store.bind_repo("o/r", repo_id="111")
+    store.upsert_task(1, title="a")
+
+    assert store.bind_repo("o/r", repo_id="222") is True
+    assert store.tasks() == []
+    assert store.get_meta("repo_id") == "222"
+
+
+def test_rows_older_than_the_fork_are_dropped_without_an_id(tmp_path):
+    """The backstop for a database written before ids were recorded: nothing
+    observed before this repository existed can be about it."""
+    store = make(tmp_path)
+    store.bind_repo("o/r")
+    store.upsert_task(12, title="from the fork that was deleted", detected_at=1000.0)
+    store.upsert_task(1, title="from this one", detected_at=3000.0)
+
+    store.bind_repo("o/r", repo_id="222", born=2000.0)
+    assert [t["issue_number"] for t in store.tasks()] == [1]
+
+
 def test_the_same_fork_keeps_its_history(tmp_path):
     store = make(tmp_path)
     store.bind_repo("o/r")

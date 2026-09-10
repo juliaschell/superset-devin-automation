@@ -181,8 +181,12 @@ Proposals are written to be merged unchanged (state, settings, validation comman
 
 Decline suggested classifications **by setting the status and moving to declined folder**, not by closing the PR or removing the file. The classification directory is ground truth. Closing is not a signal — the class will be proposed again next run. 
 
-Editing a proposal before merging is always available. If proposals routinely
-need rewriting, that is a bug in the scan prompt, not a step in the process.
+Editing a proposal before merging is always available, and you need not do it
+by hand: the proposal PR is opened by a Devin session, so commenting on a file
+— *mute this one*, *decline this one, too noisy*, *drop this one* — is enough
+for Devin to push those edits to the same branch. Merging stays your click. If
+proposals routinely need rewriting, that is a bug in the scan prompt, not a
+step in the process.
 
 ### Adding a classification by hand
 

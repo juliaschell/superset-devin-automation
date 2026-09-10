@@ -76,3 +76,26 @@ def test_events_are_append_only_history(tmp_path):
     store.log("dispatched", issue_number=1, session_id="s1")
     kinds = [e["kind"] for e in store.events()]
     assert "detected" in kinds and "dispatched" in kinds
+
+
+def test_a_new_fork_starts_from_an_empty_database(tmp_path):
+    """The database is a docker volume that outlives the fork it describes, so
+    a run against a new fork would otherwise chart the old fork's funnel."""
+    store = make(tmp_path)
+    store.bind_repo("o/old")
+    store.upsert_task(1, title="a")
+    store.set_scans([{"session_id": "s"}])
+
+    assert store.bind_repo("o/new") is True
+    assert store.tasks() == []
+    assert store.scans() == []
+    assert store.get_meta("repo") == "o/new"
+    assert [e["kind"] for e in store.events()] == ["repo_changed"]
+
+
+def test_the_same_fork_keeps_its_history(tmp_path):
+    store = make(tmp_path)
+    store.bind_repo("o/r")
+    store.upsert_task(1, title="a")
+    assert store.bind_repo("o/r") is False
+    assert len(store.tasks()) == 1

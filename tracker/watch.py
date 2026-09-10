@@ -114,6 +114,42 @@ def scan_view(session: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def scan_summary(session: dict[str, Any]) -> str:
+    """What a finished scan produced, in one line.
+
+    A scan is the only session whose result is not a PR on an issue, so
+    without this its whole output is a session someone has to open and read.
+    """
+    out = structured(session)
+    if not out:
+        return "no report"
+    counts = {
+        "issues filed": out.get("issues_filed"),
+        "classes proposed": out.get("classes_proposed"),
+        "skipped": out.get("skipped"),
+    }
+    line = ", ".join(f"{len(v)} {name}" for name, v in counts.items() if isinstance(v, list) and v)
+    urls = sorted(
+        {
+            item["pr_url"]
+            for item in out.get("classes_proposed") or []
+            if isinstance(item, dict) and item.get("pr_url")
+        }
+    )
+    return ", ".join(filter(None, [line or "nothing to do", *urls]))
+
+
+def belongs_to(session: dict[str, Any], repo: str) -> bool:
+    """Whether this session is work on ``repo``.
+
+    The project tag is the same on every fork, so without this a run against a
+    new fork inherits the sessions of the one before it. Sessions that name no
+    repo predate the tag and are left visible rather than silently dropped.
+    """
+    tagged = [t for t in session.get("tags") or [] if str(t).startswith("repo:")]
+    return not tagged or f"repo:{repo}" in tagged
+
+
 def issue_number_for(session: dict[str, Any]) -> int | None:
     """Which issue a session is working on, or None while it has not said yet."""
     value = structured(session).get("issue_number")
@@ -213,9 +249,9 @@ class Watcher:
         self.devin = devin
         self.github = github
         self.config = config
-        # Scan sessions are attached to no issue by nature, so they are logged
-        # once rather than on every one of the day's ~2,800 cycles.
-        self._unattached: set[str] = set()
+        # Scan sessions are attached to no issue by nature. Logged on the two
+        # cycles that mean something rather than all ~2,800 of the day's.
+        self._scans: dict[str, str] = {}
 
     # ------------------------------------------------------------------ pass
 
@@ -272,7 +308,11 @@ class Watcher:
 
     def sync_sessions(self) -> int:
         """What Devin is doing about it. One call for every in-flight session."""
-        sessions = self.devin.list_sessions(tags=[self.config.session_tag])
+        sessions = [
+            s
+            for s in self.devin.list_sessions(tags=[self.config.session_tag])
+            if belongs_to(s, self.config.repo)
+        ]
         scans: list[dict[str, Any]] = []
         # Oldest first, so when an issue has several attempts the row ends the
         # cycle describing the newest one.
@@ -288,13 +328,7 @@ class Watcher:
                 # A scan works on the repo, not on an issue, so it is shown as
                 # itself instead of being filed under a task that cannot exist.
                 scans.append(scan_view(session))
-                if session_id not in self._unattached:
-                    self._unattached.add(str(session_id))
-                    self.store.log(
-                        "session_unattached",
-                        session_id=session_id,
-                        detail="/".join(p for p in _status(session) if p),
-                    )
+                self.log_scan(session)
                 continue
             task = self.store.get_task(number)
             update = task_update_from_session(session)
@@ -334,6 +368,20 @@ class Watcher:
             self.store.advance(number, stage)
         self.store.set_scans(sorted(scans, key=lambda s: s["started_at"] or 0.0, reverse=True)[:5])
         return len(sessions)
+
+    def log_scan(self, session: dict[str, Any]) -> None:
+        """A scan's two moments: it started, and here is what came of it."""
+        session_id = str(session.get("session_id") or "")
+        phase = "finished" if is_done(session) else "started"
+        seen = self._scans.get(session_id)
+        if phase == seen or seen == "finished":
+            return
+        self._scans[session_id] = phase
+        self.store.log(
+            f"scan_{phase}",
+            session_id=session_id,
+            detail=scan_summary(session) if phase == "finished" else scan_view(session)["url"],
+        )
 
     def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:
         """What GitHub says about the PR: its state and its own timestamps.

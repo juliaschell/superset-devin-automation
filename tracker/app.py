@@ -42,6 +42,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Superset remediation tracker")
     store = Store(config.db_path)
     watcher = build_watcher(store)
+    # After the configuration is validated, so an empty REPO never becomes the
+    # repo this database claims to be about.
+    store.bind_repo(config.repo)
     app.state.store = store
     app.state.watcher = watcher
 

@@ -5,14 +5,17 @@ from typing import Any
 from tracker.store import Store
 from tracker.watch import (
     Watcher,
+    belongs_to,
     failure_reason,
     issue_number_for,
+    scan_summary,
     stage_for_session,
     task_update_from_session,
 )
 
 
 class FakeConfig:
+    repo = "o/r"
     ready_label = "devin:ready"
     rejected_label = "devin:rejected"
     session_tag = "superset-remediation"
@@ -196,14 +199,56 @@ def test_two_sessions_on_one_issue_do_not_inflate_attempts_per_poll(tmp_path):
     assert store.get_task(1)["attempts"] == 2
 
 
-def test_an_unattached_session_is_logged_once_not_once_per_cycle(tmp_path):
-    """Scan sessions never carry an issue number, so logging them on every poll
-    would bury the event log within an hour."""
+def test_a_scan_is_logged_when_it_starts_and_when_it_ends(tmp_path):
+    """The two lines that let someone watching `make up` follow a scan without
+    opening the session: it began, and this is what it produced."""
     store, _, watcher = build(tmp_path)
-    watcher.devin = FakeDevin([session(None, session_id="scan")])
-    for _ in range(4):
+    running = session(None, session_id="scan", status_detail="working")
+    watcher.devin = FakeDevin([running])
+    for _ in range(3):
         watcher.cycle()
-    assert len([e for e in store.events() if e["kind"] == "session_unattached"]) == 1
+
+    done = session(
+        None,
+        session_id="scan",
+        status_detail="finished",
+        output={"classes_proposed": [{"slug": "a", "pr_url": "https://github.com/o/r/pull/2"}]},
+    )
+    watcher.devin = FakeDevin([done])
+    for _ in range(3):
+        watcher.cycle()
+
+    kinds = [e["kind"] for e in store.events() if e["kind"].startswith("scan_")]
+    assert kinds == ["scan_finished", "scan_started"]  # newest first
+    finished = next(e for e in store.events() if e["kind"] == "scan_finished")
+    assert finished["detail"] == "1 classes proposed, https://github.com/o/r/pull/2"
+
+
+def test_sessions_tagged_with_another_fork_are_not_this_run(tmp_path):
+    """Every fork's sessions carry the same project tag, so a run against a new
+    fork would otherwise report the previous fork's work as its own."""
+    assert belongs_to({"tags": ["superset-remediation", "repo:o/r"]}, "o/r")
+    assert not belongs_to({"tags": ["repo:o/old"]}, "o/r")
+    assert belongs_to({"tags": ["superset-remediation"]}, "o/r")  # predates the tag
+
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin(
+        [
+            session(1, session_id="mine", tags=["repo:o/r"]),
+            session(2, session_id="theirs", tags=["repo:o/old"]),
+        ]
+    )
+    watcher.cycle()
+    assert store.get_task(2) is None
+    assert store.get_task(1)["session_id"] == "mine"
+
+
+def test_scan_summary_says_so_when_a_scan_found_nothing():
+    """An empty report is a result, and reads as a broken run if left blank."""
+    assert scan_summary(session(None, output={"issues_filed": [], "classes_proposed": []})) == (
+        "nothing to do"
+    )
+    assert scan_summary({"structured_output": {}}) == "no report"
 
 
 def test_a_scan_is_visible_even_though_it_has_no_issue(tmp_path):

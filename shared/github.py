@@ -138,13 +138,38 @@ class GitHubClient:
             "GET", f"/repos/{self.repo}/pulls", params={"state": "open", "per_page": 100}
         )
 
-    def changes_requested(self, number: int) -> int:
-        """How many times a human sent this PR back. The measure of whether
-        the first attempt was good enough — nothing acts on it."""
+    def changes_requested(self, number: int) -> tuple[int, str | None]:
+        """How many times a human sent this PR back, and when the last one was.
+        The measure of whether the first attempt was good enough — nothing
+        acts on it. The timestamp says whether an answer has landed since."""
         reviews = self._request(
             "GET", f"/repos/{self.repo}/pulls/{number}/reviews", params={"per_page": 100}
         )
-        return len([r for r in reviews or [] if r.get("state") == "CHANGES_REQUESTED"])
+        sent_back = [r for r in reviews or [] if r.get("state") == "CHANGES_REQUESTED"]
+        last = sent_back[-1].get("submitted_at") if sent_back else None
+        return len(sent_back), (str(last) if last else None)
+
+    def last_devin_activity_at(self, number: int) -> str | None:
+        """When Devin last answered on this PR, by commit or by comment.
+
+        A reply explaining why the review needs no change is an answer as much
+        as a commit is, so both count."""
+        commits = self._request(
+            "GET", f"/repos/{self.repo}/pulls/{number}/commits", params={"per_page": 100}
+        )
+        comments = self._request(
+            "GET", f"/repos/{self.repo}/issues/{number}/comments", params={"per_page": 100}
+        )
+        stamps = [
+            (((commits or [{}])[-1].get("commit") or {}).get("committer") or {}).get("date"),
+            *(
+                c.get("created_at")
+                for c in comments or []
+                if str((c.get("user") or {}).get("login", "")).startswith("devin-ai-integration")
+            ),
+        ]
+        seen = [str(s) for s in stamps if s]
+        return max(seen) if seen else None
 
     def pull_request_paths(self, number: int) -> list[str]:
         files = self._request(

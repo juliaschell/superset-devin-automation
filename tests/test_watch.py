@@ -57,14 +57,21 @@ class FakeGitHub:
         self.open_prs: list[dict[str, Any]] = []
         self.paths: dict[int, list[str]] = {}
         self.reviews: dict[int, int] = {}
+        self.reviewed_at: dict[int, str] = {}
+        self.devin_activity: dict[int, str | None] = {}
         self.calls: list[str] = []
 
     def open_pull_requests(self) -> list[dict[str, Any]]:
         return self.open_prs
 
-    def changes_requested(self, number: int) -> int:
+    def changes_requested(self, number: int) -> tuple[int, str | None]:
         self.calls.append(f"reviews:{number}")
-        return self.reviews.get(number, 0)
+        count = self.reviews.get(number, 0)
+        return count, (self.reviewed_at.get(number, "2026-01-01T00:00:00Z") if count else None)
+
+    def last_devin_activity_at(self, number: int) -> str | None:
+        self.calls.append(f"activity:{number}")
+        return self.devin_activity.get(number)
 
     def pull_request_paths(self, number: int) -> list[str]:
         self.calls.append(f"files:{number}")
@@ -412,6 +419,27 @@ def test_a_review_is_counted_and_nothing_is_started(tmp_path):
     watcher.sync_waiting()
     assert store.get_task(4)["changes_requested"] == 2
     assert len([e for e in store.events() if e["kind"] == "changes_requested"]) == 2
+
+
+def test_a_sent_back_pr_comes_back_to_the_human_once_devin_answers(tmp_path):
+    """Devin answers a review with a commit, or with a comment saying why it
+    needs no change. Either way the next move is the human's again, and a row
+    that still reads 'Devin is answering' sends them away from their own queue.
+    """
+    store, github, watcher = build(tmp_path)
+    store.upsert_task(4, pr_url="https://github.com/o/r/pull/1", validation_passed=1)
+    github.open_prs = [pr(1)]
+    github.reviews[1] = 1
+    github.reviewed_at[1] = "2026-01-02T00:00:00Z"
+
+    github.devin_activity[1] = "2026-01-01T00:00:00Z"  # only the original commits
+    watcher.sync_waiting()
+    assert store.waiting()[0]["do"].startswith("sent back")
+
+    github.devin_activity[1] = "2026-01-02T00:05:00Z"
+    watcher.sync_waiting()
+    assert store.waiting()[0]["do"] == "re-review — Devin answered"
+    assert store.get_task(4)["changes_requested"] == 1
 
 
 def test_a_pr_nobody_sent_back_is_not_counted_as_rework(tmp_path):

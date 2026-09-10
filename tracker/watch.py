@@ -139,6 +139,27 @@ def scan_summary(session: dict[str, Any]) -> str:
     return ", ".join(filter(None, [line or "nothing to do", *urls]))
 
 
+def is_scan(session: dict[str, Any]) -> bool:
+    """Whether an issueless session is a scan.
+
+    Remediation has one other way of belonging to no issue: a review on a class
+    proposal, which is about the registry rather than a finding. Anything not
+    marked as remediation is a scan, so sessions older than the role tag keep
+    showing up where they always did.
+    """
+    return "role:remediate" not in (session.get("tags") or [])
+
+
+def revision_summary(session: dict[str, Any]) -> str:
+    """What a class-proposal revision did, in one line."""
+    out = structured(session)
+    return " ".join(
+        str(part)
+        for part in (out.get("outcome") or "no report", out.get("pr_url"))
+        if part
+    )
+
+
 def belongs_to(session: dict[str, Any], repo: str) -> bool:
     """Whether this session is work on ``repo``.
 
@@ -249,9 +270,10 @@ class Watcher:
         self.devin = devin
         self.github = github
         self.config = config
-        # Scan sessions are attached to no issue by nature. Logged on the two
-        # cycles that mean something rather than all ~2,800 of the day's.
-        self._scans: dict[str, str] = {}
+        # Scans and class revisions are attached to no issue by nature. Logged
+        # on the two cycles that mean something rather than all ~2,800 of the
+        # day's.
+        self._unattached: dict[str, str] = {}
 
     # ------------------------------------------------------------------ pass
 
@@ -325,10 +347,14 @@ class Watcher:
             session_id = session.get("session_id")
             number = issue_number_for(session)
             if number is None:
-                # A scan works on the repo, not on an issue, so it is shown as
-                # itself instead of being filed under a task that cannot exist.
-                scans.append(scan_view(session))
-                self.log_scan(session)
+                # A scan works on the repo, and a revision on a proposal PR:
+                # neither can be filed under a task, so they are shown as
+                # themselves rather than not at all.
+                if is_scan(session):
+                    scans.append(scan_view(session))
+                    self.log_unattached(session, "scan")
+                else:
+                    self.log_unattached(session, "revision")
                 continue
             task = self.store.get_task(number)
             update = task_update_from_session(session)
@@ -369,18 +395,20 @@ class Watcher:
         self.store.set_scans(sorted(scans, key=lambda s: s["started_at"] or 0.0, reverse=True)[:5])
         return len(sessions)
 
-    def log_scan(self, session: dict[str, Any]) -> None:
-        """A scan's two moments: it started, and here is what came of it."""
+    def log_unattached(self, session: dict[str, Any], kind: str) -> None:
+        """An issueless session's two moments: it started, and here is what
+        came of it."""
         session_id = str(session.get("session_id") or "")
         phase = "finished" if is_done(session) else "started"
-        seen = self._scans.get(session_id)
+        seen = self._unattached.get(session_id)
         if phase == seen or seen == "finished":
             return
-        self._scans[session_id] = phase
+        self._unattached[session_id] = phase
+        summarise = scan_summary if kind == "scan" else revision_summary
         self.store.log(
-            f"scan_{phase}",
+            f"{kind}_{phase}",
             session_id=session_id,
-            detail=scan_summary(session) if phase == "finished" else scan_view(session)["url"],
+            detail=summarise(session) if phase == "finished" else scan_view(session)["url"],
         )
 
     def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:

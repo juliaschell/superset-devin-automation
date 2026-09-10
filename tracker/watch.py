@@ -411,6 +411,8 @@ def waiting_item(
             "what": task.get("classification") or task.get("title") or "",
             "do": (
                 "sent back — Devin is answering"
+                if task.get("awaiting_devin")
+                else "re-review — Devin answered"
                 if (task.get("changes_requested") or 0)
                 else "merge"
                 if passed == 1
@@ -596,21 +598,23 @@ class Watcher:
             if task is None and not opened_by_devin(pr):
                 continue  # someone else's PR is not this loop's business
             if task:
-                task = {**task, "changes_requested": self.note_review(pr["number"], task)}
+                count, answering = self.note_review(pr["number"], task)
+                task = {**task, "changes_requested": count, "awaiting_devin": answering}
             paths = None if task else self.github.pull_request_paths(pr["number"])
             items.append(waiting_item(pr, task, paths))
         self.store.set_waiting(items)
         return len(items)
 
-    def note_review(self, number: int, task: dict[str, Any]) -> int:
-        """Count of times a human sent this PR back, recorded and not acted on.
+    def note_review(self, number: int, task: dict[str, Any]) -> tuple[int, bool]:
+        """Times a human sent this PR back, and whether Devin has yet answered
+        the last one. Counted and not acted on.
 
         Nothing here reruns the work: Devin's own comment monitoring answers
         reviews on the PR its session opened, and a second trigger would only
         race it. What the loop owes you is the number — how often a first
         attempt was not good enough is the measure of whether it is working.
         """
-        count = self.github.changes_requested(number)
+        count, reviewed_at = self.github.changes_requested(number)
         before = task.get("changes_requested") or 0
         if count > before:
             self.store.upsert_task(task["issue_number"], changes_requested=count)
@@ -619,7 +623,13 @@ class Watcher:
                 issue_number=task["issue_number"],
                 detail=f"sent back by a human ({count}) — {task.get('pr_url') or ''}",
             )
-        return count
+        if not count:
+            return 0, False
+        # A commit or a reply — an answer saying the review needs no change is
+        # still an answer — hands the PR back to the human.
+        reviewed = epoch(reviewed_at)
+        answered = epoch(self.github.last_devin_activity_at(number))
+        return count, reviewed is not None and (answered is None or answered < reviewed)
 
     def log_scan(self, session: dict[str, Any]) -> None:
         """A scan's two moments: it started, and here is what came of it."""

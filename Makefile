@@ -13,6 +13,9 @@ export REPO
 export GITHUB_TOKEN
 export DEVIN_API_KEY := $(DEVIN_KEY)
 export DEVIN_ORG_ID := $(DEVIN_ORG)
+# The dashboard is http://superset.localhost. Override if :80 is taken, and it
+# becomes http://superset.localhost:$(DASHBOARD_PORT).
+export DASHBOARD_PORT ?= 80
 
 COMPOSE = docker compose -f docker/compose.yml
 
@@ -20,7 +23,7 @@ COMPOSE = docker compose -f docker/compose.yml
 
 # --- running it -------------------------------------------------------------
 
-## Everyone. Bootstrap the fork and serve the dashboard on :8000. Idempotent,
+## Everyone. Bootstrap the fork and serve http://superset.localhost. Idempotent,
 ## so this is also how you apply a change to a prompt or an automation.
 up: values
 	$(COMPOSE) up --build
@@ -61,7 +64,7 @@ bootstrap: values
 
 ## Anyone working on this repo. The dashboard, without a container.
 run:
-	uvicorn tracker.app:app --host 0.0.0.0 --port 8000 --no-access-log
+	uvicorn tracker.app:app --host 0.0.0.0 --port $(DASHBOARD_PORT) --no-access-log
 
 # --- working on this repo ---------------------------------------------------
 

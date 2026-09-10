@@ -65,7 +65,10 @@ ends saying what it filed or proposed — so nothing needs the Devin session ope
 
 The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 
-A metrics dashboard will be available at http://localhost:8000
+A metrics dashboard will be available at http://superset.localhost — browsers
+resolve any `*.localhost` name to 127.0.0.1, so nothing needs adding to
+`/etc/hosts`. If port 80 is already taken, pass `DASHBOARD_PORT=8000` to
+`make up` and the dashboard moves to http://superset.localhost:8000
 
 5. Merge 1+ classifications
 

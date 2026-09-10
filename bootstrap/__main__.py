@@ -90,6 +90,16 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
     return []
 
 
+def dashboard_url() -> str:
+    """Where the dashboard is, given the port it was published on.
+
+    A `*.localhost` name resolves to 127.0.0.1 in every browser without a hosts
+    file, so the default has no port to remember.
+    """
+    port = os.environ.get("DASHBOARD_PORT", "80")
+    return "http://superset.localhost" + ("" if port in ("80", "") else f":{port}")
+
+
 def banner(repo: str) -> str:
     """The one step with no API: granting Devin access to the fork.
 
@@ -107,7 +117,7 @@ def banner(repo: str) -> str:
         "Until then the scan cannot read the code and issue labels reach",
         "no automation, so the dashboard sits empty and looks broken.",
         "",
-        "Then: http://localhost:8000 for the dashboard, and `make scan`",
+        f"Then: {dashboard_url()} for the dashboard, and `make scan`",
         "in a second terminal to run a scan now rather than at 02:00 PT.",
     ]
     width = max(len(line) for line in lines)

@@ -12,8 +12,11 @@ services:
     command: >
       sh -c "python -m bootstrap &&
              uvicorn tracker.app:app --host 0.0.0.0 --port 8000 --no-access-log"
+    # On :80 so the dashboard is http://superset.localhost with no port to
+    # remember — browsers resolve any *.localhost name to 127.0.0.1 without a
+    # hosts file entry. Set DASHBOARD_PORT if something already has :80.
     ports:
-      - "8000:8000"
+      - "${DASHBOARD_PORT:-80}:8000"
     # Passed through from the shell rather than read from a file: there is no
     # .env to copy, fill in and forget to gitignore, and a variable missing
     # here fails on bootstrap's own message naming it.
@@ -23,6 +26,7 @@ services:
       - DEVIN_ORG_ID
       - GITHUB_TOKEN
       - POLL_INTERVAL_SECONDS
+      - DASHBOARD_PORT
     volumes:
       - state:/data
 

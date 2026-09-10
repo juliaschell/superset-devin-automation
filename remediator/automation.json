@@ -40,7 +40,7 @@
       "type": "start_session",
       "prompt": "{{REMEDIATE_PROMPT}}",
       "session": {
-        "tags": ["superset-remediation", "role:remediate"],
+        "tags": ["superset-remediation", "role:remediate", "repo:{{REPO}}"],
         "bypass_approval": true
       }
     }

@@ -91,6 +91,25 @@ class Store:
             if name not in have:
                 self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 
+    def bind_repo(self, repo: str) -> bool:
+        """Point this database at ``repo``, emptying it if it held another.
+
+        The database outlives the container it runs in, so pointing the same
+        volume at a fresh fork would otherwise measure a funnel of issue
+        numbers that no longer exist. Returns True if anything was discarded.
+        """
+        previous = self.get_meta("repo")
+        changed = previous is not None and previous != repo
+        if changed:
+            self.conn.execute("DELETE FROM tasks")
+            self.conn.execute("DELETE FROM task_events")
+            self.conn.execute("DELETE FROM meta WHERE key <> 'repo'")
+            self.conn.commit()
+        self.set_meta("repo", repo)
+        if changed:
+            self.log("repo_changed", detail=f"{previous} → {repo}: cleared previous state")
+        return changed
+
     # ---------------------------------------------------------------- events
 
     def log(
@@ -114,6 +133,11 @@ class Store:
             ),
         )
         self.conn.commit()
+        # Also to the terminal `make up` is already holding: an event is a
+        # state change, so this narrates the run without anyone opening the
+        # dashboard, and stays quiet on the cycles where nothing happened.
+        where = f" #{issue_number}" if issue_number else ""
+        print(f"{time.strftime('%H:%M:%S')} {kind}{where} {detail or ''}".rstrip(), flush=True)
 
     def events(self, limit: int = 200) -> list[dict[str, Any]]:
         rows = self.conn.execute(

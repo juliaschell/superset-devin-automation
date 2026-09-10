@@ -41,7 +41,7 @@
       "type": "start_session",
       "prompt": "{{SCAN_PROMPT}}",
       "session": {
-        "tags": ["superset-remediation", "role:scan"],
+        "tags": ["superset-remediation", "role:scan", "repo:{{REPO}}"],
         "bypass_approval": true
       }
     }

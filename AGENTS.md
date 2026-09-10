@@ -70,6 +70,14 @@ the number there and re-run `make up` to apply it.
 4. The dashboard at `http://localhost:8000` shows the funnel; `/report.md` is
    the same thing written out, and `/healthz` fails if the watch loop stalls.
 
+Metrics are per fork: the SQLite volume records which `REPO` it describes and
+empties itself when that changes, and sessions carry a `repo:` tag so one
+fork's work never counts toward another's. Nothing to reset by hand.
+
+The `make up` terminal prints one line per state change — a scan starting and
+what it produced, an issue detected, a session dispatched, a PR rejected — so
+tailing it is enough to follow a run, and silence means nothing has changed.
+
 Detection is only as good as the registry, so if the person wants to see the
 loop close in one sitting, the useful thing to do is help them review the class
 proposals — not to add classes yourself.

@@ -6,9 +6,12 @@ services:
     # Bootstrap is idempotent, so every start brings the fork's labels,
     # registry and automations back in line with what is checked in here,
     # then serves the dashboard.
+    # --no-access-log so the loop's own lines are the output: the health check
+    # alone logs a request every 30s, which is the whole terminal on a quiet
+    # night.
     command: >
       sh -c "python -m bootstrap &&
-             uvicorn tracker.app:app --host 0.0.0.0 --port 8000"
+             uvicorn tracker.app:app --host 0.0.0.0 --port 8000 --no-access-log"
     ports:
       - "8000:8000"
     # Passed through from the shell rather than read from a file: there is no

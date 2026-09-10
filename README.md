@@ -59,9 +59,9 @@ If not manually kicked, it would run automatically at 2:00PT
 `make scan` only files the issue whose label is the trigger, so the scan itself
 starts on Devin's side: it waits for that session, prints a link to it, and if
 none starts says why — either Devin has no access to the fork, or the scan
-automation is over its 12-runs-a-day cap and skipped this one. Follow it under
-**Scans** on the dashboard, not in the `make up` terminal, which logs only what
-it observes.
+automation is over its 12-runs-a-day cap and skipped this one. From there the
+`make up` terminal narrates it — a line when the scan starts, and one when it
+ends saying what it filed or proposed — so nothing needs the Devin session open.
 
 The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
 
@@ -94,6 +94,10 @@ same four values. Every Make target says who it is for in the comment above it.
 | `/metrics` | Prometheus |
 | `/metrics.json` | the same numbers as JSON |
 | `/healthz` | 503 if the watch loop has gone stale |
+
+The numbers are always about one fork: state lives in a docker volume that
+outlives the container, so starting `make up` with a different `REPO` clears it
+and a fresh fork begins at zero.
 
 Definitions are choices, so they are stated rather than implied:
 

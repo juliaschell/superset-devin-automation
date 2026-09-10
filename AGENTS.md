@@ -80,10 +80,9 @@ tailing it is enough to follow a run, and silence means nothing has changed.
 
 Detection is only as good as the registry, so if the person wants to see the
 loop close in one sitting, the useful thing to do is help them review the class
-proposals — not to add classes yourself. They do not have to edit the files:
-comments plus a **Request changes** review on the proposal PR start a session
-that mutes, declines, rewrites or deletes each file as asked and pushes to the
-same branch. Merging it stays theirs.
+proposals — not to add classes yourself. They need not edit the files: the
+proposal PR belongs to a Devin session, so comments on it are answered with
+commits to the same branch. Merging it stays theirs.
 
 ## Changing things
 

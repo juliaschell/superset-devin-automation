@@ -1,15 +1,12 @@
 {
   "type": "object",
-  "required": ["attempt_kind", "outcome"],
+  "required": ["issue_number", "attempt_kind", "outcome", "classification"],
   "properties": {
-    "issue_number": {
-      "type": "integer",
-      "description": "The issue being fixed. Omitted by a class_revision, which answers a review on a proposal PR and belongs to no issue."
-    },
+    "issue_number": {"type": "integer"},
     "attempt_kind": {
       "type": "string",
-      "enum": ["first_attempt", "relabel_rerun", "review_rework", "class_revision"],
-      "description": "Which door this session came in: a fresh label, a re-applied label on an edited issue, a changes_requested review on a fix PR, or one on a classification proposal PR."
+      "enum": ["first_attempt", "relabel_rerun", "review_rework"],
+      "description": "Which door this session came in: a fresh label, a re-applied label on an edited issue, or a changes_requested review."
     },
     "classification": {"type": "string"},
     "classification_matched": {
@@ -22,7 +19,6 @@
         "pr_opened_validated",
         "pr_opened_validation_failed",
         "no_matching_class",
-        "proposal_revised",
         "no_change_needed",
         "blocked",
         "abandoned"

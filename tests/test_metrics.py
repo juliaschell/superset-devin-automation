@@ -98,6 +98,7 @@ def test_changes_requested_is_measured_over_prs_a_human_could_judge(tmp_path):
     store.upsert_task(2, changes_requested=1)
     metrics = compute(store)
     assert metrics["changes_requested_prs"] == 1
+    assert metrics["prs_opened"] == 2
     assert metrics["changes_requested_rate"] == 50.0
 
 

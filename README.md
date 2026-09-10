@@ -70,6 +70,11 @@ resolve any `*.localhost` name to 127.0.0.1, so nothing needs adding to
 `/etc/hosts`. If port 80 is already taken, pass `DASHBOARD_PORT=8000` to
 `make up` and the dashboard moves to http://superset.localhost:8000
 
+It reloads itself every 15 seconds and the loop behind it polls GitHub and Devin
+just as often, so a change shows within about half a minute.
+`POLL_INTERVAL_SECONDS` moves the polling; raise it on a fork busy enough to
+feel the GitHub rate limit.
+
 5. Merge 1+ classifications
 
 The first scan will find the classification directory empty, so it will not file bugs. It will propose some new classifications in your fork repo. These PRs must be reviewed, modified as desired, and merged. There must be at least 1 active classification for the scanner to be able to file new bugs. 

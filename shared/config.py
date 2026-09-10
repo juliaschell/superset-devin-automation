@@ -27,7 +27,7 @@ class Config:
     repo: str = field(default_factory=lambda: _env("REPO"))
     session_tag: str = field(default_factory=lambda: _env("SESSION_TAG", "superset-remediation"))
     db_path: str = field(default_factory=lambda: _env("DB_PATH", "data/state.db"))
-    poll_interval_seconds: int = field(default_factory=lambda: _int("POLL_INTERVAL_SECONDS", 30))
+    poll_interval_seconds: int = field(default_factory=lambda: _int("POLL_INTERVAL_SECONDS", 15))
     session_timeout_seconds: int = field(default_factory=lambda: _int("SESSION_TIMEOUT_SECONDS", 3 * 3600))
     ready_label: str = field(default_factory=lambda: _env("READY_LABEL", "devin:ready"))
     rejected_label: str = field(default_factory=lambda: _env("REJECTED_LABEL", "devin:rejected"))

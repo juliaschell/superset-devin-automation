@@ -1,10 +1,13 @@
-# Every target takes the same four values, on the command line:
+# Every target takes the same four values, from the environment if they are
+# exported there and from the command line otherwise:
+#
+#   export REPO=you/superset DEVIN_API_KEY=... DEVIN_ORG_ID=... GITHUB_TOKEN=...
+#   make up
 #
 #   make up REPO=you/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=...
 #
-# Exporting them instead works too, under either name. Note that a command line
-# lands in shell history and in `ps`, so export the three secrets on a machine
-# where that matters.
+# Either name works for the Devin two. A command line lands in shell history
+# and in `ps`, so prefer exporting the three secrets where that matters.
 
 DEVIN_KEY := $(if $(DEVIN_KEY),$(DEVIN_KEY),$(DEVIN_API_KEY))
 DEVIN_ORG := $(if $(DEVIN_ORG),$(DEVIN_ORG),$(DEVIN_ORG_ID))
@@ -34,7 +37,9 @@ values:
 	@missing="$(strip $(foreach v,REPO DEVIN_KEY DEVIN_ORG GITHUB_TOKEN,$(if $($(v)),,$(v))))"; \
 	if [ -n "$$missing" ]; then \
 		echo "no value for: $$missing"; \
-		echo "usage: make up REPO=you/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=..."; \
+		echo "export it (REPO, DEVIN_API_KEY, DEVIN_ORG_ID, GITHUB_TOKEN) or pass it:"; \
+		args=""; for v in $$missing; do args="$$args $$v=..."; done; \
+		echo "  make $(or $(firstword $(MAKECMDGOALS)),up)$$args"; \
 		exit 2; \
 	fi
 

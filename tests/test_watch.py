@@ -224,6 +224,32 @@ def test_a_scan_is_logged_when_it_starts_and_when_it_ends(tmp_path):
     assert finished["detail"] == "1 classes proposed, https://github.com/o/r/pull/2"
 
 
+def test_a_class_revision_is_reported_as_itself_not_as_a_scan(tmp_path):
+    """A review on a proposal PR belongs to no issue, like a scan does, but it
+    surveys nothing — counting it as a scan would invent runs that never ran."""
+    store, _, watcher = build(tmp_path)
+    watcher.devin = FakeDevin(
+        [
+            session(
+                None,
+                session_id="rev",
+                tags=["superset-remediation", "role:remediate"],
+                output={
+                    "attempt_kind": "class_revision",
+                    "outcome": "proposal_revised",
+                    "pr_url": "https://github.com/o/r/pull/2",
+                },
+            )
+        ]
+    )
+    for _ in range(2):
+        watcher.cycle()
+
+    assert store.scans() == []
+    finished = [e for e in store.events() if e["kind"] == "revision_finished"]
+    assert finished[0]["detail"] == "proposal_revised https://github.com/o/r/pull/2"
+
+
 def test_sessions_tagged_with_another_fork_are_not_this_run(tmp_path):
     """Every fork's sessions carry the same project tag, so a run against a new
     fork would otherwise report the previous fork's work as its own."""

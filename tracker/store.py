@@ -271,15 +271,16 @@ class Store:
         row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
         return row["value"] if row else None
 
-    def set_scans(self, scans: list[dict[str, Any]]) -> None:
-        """Scan sessions belong to no issue, so they have no row of their own.
+    def set_sessions(self, sessions: list[dict[str, Any]]) -> None:
+        """What Devin is doing right now, as last seen.
 
-        They are the first thing to look at when the dashboard is empty — the
-        answer to "did anything happen at all" — and Devin remains their record,
-        so the latest view is cached here rather than modelled.
+        A scan belongs to no issue and a remediation does not name its issue
+        until it reports, so neither has a task row while it is working. Devin
+        remains the record either way, so the latest view is cached here rather
+        than modelled.
         """
-        self.set_meta("scans", json.dumps(scans))
+        self.set_meta("sessions", json.dumps(sessions))
 
-    def scans(self) -> list[dict[str, Any]]:
-        raw = self.get_meta("scans")
+    def sessions(self) -> list[dict[str, Any]]:
+        raw = self.get_meta("sessions")
         return json.loads(raw) if raw else []

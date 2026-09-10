@@ -77,7 +77,7 @@ def create_app() -> FastAPI:
                 "request": request,
                 "metrics": current_metrics(),
                 "tasks": store.tasks(),
-                "scans": store.scans(),
+                "sessions": store.sessions(),
                 "events": store.events(limit=40),
                 "config": config,
             },

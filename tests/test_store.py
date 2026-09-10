@@ -84,11 +84,11 @@ def test_a_new_fork_starts_from_an_empty_database(tmp_path):
     store = make(tmp_path)
     store.bind_repo("o/old")
     store.upsert_task(1, title="a")
-    store.set_scans([{"session_id": "s"}])
+    store.set_sessions([{"session_id": "s"}])
 
     assert store.bind_repo("o/new") is True
     assert store.tasks() == []
-    assert store.scans() == []
+    assert store.sessions() == []
     assert store.get_meta("repo") == "o/new"
     assert [e["kind"] for e in store.events()] == ["repo_changed"]
 

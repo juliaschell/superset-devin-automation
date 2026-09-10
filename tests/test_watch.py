@@ -4,6 +4,7 @@ from typing import Any
 
 from tracker.store import Store
 from tracker.watch import (
+    HEARTBEAT_SECONDS,
     Watcher,
     belongs_to,
     failure_reason,
@@ -222,6 +223,36 @@ def test_a_scan_is_logged_when_it_starts_and_when_it_ends(tmp_path):
     assert kinds == ["scan_finished", "scan_started"]  # newest first
     finished = next(e for e in store.events() if e["kind"] == "scan_finished")
     assert finished["detail"] == "1 classes proposed, https://github.com/o/r/pull/2"
+
+
+def test_a_remediation_says_where_to_watch_it_and_that_it_is_still_going(tmp_path):
+    """A fix can run for an hour with no state change of its own. Without the
+    link on dispatch and a heartbeat after it, working and dead look alike."""
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="devin-abc", status_detail="working")])
+    watcher.cycle()
+    dispatched = next(e for e in store.events() if e["kind"] == "dispatched")
+    assert dispatched["detail"] == "https://app.devin.ai/sessions/abc"
+
+    watcher.cycle()
+    assert not [e for e in store.events() if e["kind"] == "working"]  # too soon to repeat itself
+    watcher._beats["devin-abc"] -= HEARTBEAT_SECONDS
+    watcher.cycle()
+    working = next(e for e in store.events() if e["kind"] == "working")
+    assert working["detail"].endswith("https://app.devin.ai/sessions/abc")
+
+
+def test_a_session_waiting_on_a_human_says_so_once(tmp_path):
+    """The one silence that is not progress: nothing moves until someone
+    answers, and no heartbeat would ever say that."""
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="devin-abc", status_detail="waiting_for_user")])
+    for _ in range(3):
+        watcher.cycle()
+
+    waiting = [e for e in store.events() if e["kind"] == "waiting"]
+    assert len(waiting) == 1
+    assert waiting[0]["detail"] == "needs an answer from you — https://app.devin.ai/sessions/abc"
 
 
 def test_sessions_tagged_with_another_fork_are_not_this_run(tmp_path):

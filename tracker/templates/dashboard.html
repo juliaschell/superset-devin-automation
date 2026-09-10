@@ -73,6 +73,12 @@
     .setup ol { margin:10px 0 0; padding-left:20px; }
     .setup li { margin-bottom:4px; }
     code { font-family:var(--mono); background:#1c232e; padding:1px 5px; border-radius:4px; }
+    /* A narrow window scrolls a table sideways rather than clipping its right-hand columns. */
+    @media (max-width:760px) {
+      main { padding:16px 14px 32px; }
+      .row { grid-template-columns:1fr !important; }
+      .panel table { display:block; overflow-x:auto; white-space:nowrap; }
+    }
   </style>
 </head>
 <body>

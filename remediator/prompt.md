@@ -3,9 +3,8 @@ remediation** playbook (`!superset_remediate`), attached above; this prompt only
 binds it to a repo and a trigger.
 
 The event payload below says which door you came in by — an issue labelled
-`devin:ready`, or a human requesting changes on a pull request, whether that is
-a fix of yours or a classification proposal. The playbook covers all three, and
-its bounds apply in full.
+`devin:ready`, or a human requesting changes on a pull request. The playbook
+covers both, and its bounds apply in full.
 
 One of those bounds is repeated here so that a session which somehow arrives
 without its playbook still fails closed:

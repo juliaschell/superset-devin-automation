@@ -178,19 +178,11 @@ Proposals are written to be merged unchanged (state, settings, validation comman
 | yes | merge the PR — detection starts on the next scan |
 | yes, but not yet | change `status: active` to `muted`, then merge |
 | no | move the file to `_declined/`, set `status: declined`, add a `## Why declined` section, merge |
-| mixed — some of these, not others | say so in review comments and let Devin do the edits (below) |
 
 Decline suggested classifications **by setting the status and moving to declined folder**, not by closing the PR or removing the file. The classification directory is ground truth. Closing is not a signal — the class will be proposed again next run. 
 
-Editing a proposal before merging is always available, by hand or not: comment
-on the files you want changed — *mute this one*, *decline this one, too
-noisy*, *drop this one* — and submit the review as **Request changes**. That
-event starts a session which applies each decision to the same branch and
-replies to each comment, so a whole proposal can be curated from the PR page.
-It still does not merge; adopting stays your click.
-
-If proposals routinely need rewriting, that is a bug in the scan prompt, not a
-step in the process.
+Editing a proposal before merging is always available. If proposals routinely
+need rewriting, that is a bug in the scan prompt, not a step in the process.
 
 ### Adding a classification by hand
 

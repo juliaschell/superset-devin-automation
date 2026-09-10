@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from tracker.store import Store
 from tracker.watch import (
+    HEARTBEAT_SECONDS,
     Watcher,
     belongs_to,
+    duration,
     failure_reason,
+    human_status,
     issue_number_for,
     scan_summary,
+    session_view,
     stage_for_session,
     task_update_from_session,
 )
@@ -224,6 +229,36 @@ def test_a_scan_is_logged_when_it_starts_and_when_it_ends(tmp_path):
     assert finished["detail"] == "1 classes proposed, https://github.com/o/r/pull/2"
 
 
+def test_a_remediation_says_where_to_watch_it_and_that_it_is_still_going(tmp_path):
+    """A fix can run for an hour with no state change of its own. Without the
+    link on dispatch and a heartbeat after it, working and dead look alike."""
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="devin-abc", status_detail="working")])
+    watcher.cycle()
+    dispatched = next(e for e in store.events() if e["kind"] == "dispatched")
+    assert dispatched["detail"] == "https://app.devin.ai/sessions/abc"
+
+    watcher.cycle()
+    assert not [e for e in store.events() if e["kind"] == "working"]  # too soon to repeat itself
+    watcher._beats["devin-abc"] -= HEARTBEAT_SECONDS
+    watcher.cycle()
+    working = next(e for e in store.events() if e["kind"] == "working")
+    assert working["detail"].endswith("https://app.devin.ai/sessions/abc")
+
+
+def test_a_session_waiting_on_a_human_says_so_once(tmp_path):
+    """The one silence that is not progress: nothing moves until someone
+    answers, and no heartbeat would ever say that."""
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(1)]})
+    watcher.devin = FakeDevin([session(1, session_id="devin-abc", status_detail="waiting_for_user")])
+    for _ in range(3):
+        watcher.cycle()
+
+    waiting = [e for e in store.events() if e["kind"] == "waiting"]
+    assert len(waiting) == 1
+    assert waiting[0]["detail"] == "needs an answer from you — https://app.devin.ai/sessions/abc"
+
+
 def test_sessions_tagged_with_another_fork_are_not_this_run(tmp_path):
     """Every fork's sessions carry the same project tag, so a run against a new
     fork would otherwise report the previous fork's work as its own."""
@@ -257,9 +292,73 @@ def test_a_scan_is_visible_even_though_it_has_no_issue(tmp_path):
     store, _, watcher = build(tmp_path)
     watcher.devin = FakeDevin([session(None, session_id="devin-abc")])
     watcher.cycle()
-    (scan,) = store.scans()
+    (scan,) = store.sessions()
     assert scan["session_id"] == "devin-abc"
     assert scan["url"] == "https://app.devin.ai/sessions/abc"
+
+
+def test_a_working_fix_is_on_the_dashboard_before_it_names_its_issue(tmp_path):
+    """A remediation reports its issue number only at the end, so for the hour
+    that someone actually wants to watch it, it has no task row."""
+    store, _, watcher = build(tmp_path)
+    watcher.devin = FakeDevin(
+        [
+            {
+                "session_id": "devin-abc",
+                "title": "Fix o/r#8 any types",
+                "tags": ["superset-remediation", "role:remediate"],
+                "status": "running",
+                "status_detail": "working",
+                "created_at": time.time() - 700,
+                "structured_output": {},
+            }
+        ]
+    )
+    watcher.cycle()
+    (view,) = store.sessions()
+    assert view["kind"] == "fix"
+    assert view["title"] == "Fix o/r#8 any types"
+    assert view["status"] == "working"
+    assert view["running_for"] == "11m"
+
+
+def test_a_scan_that_has_reported_reads_as_finished_not_as_waiting():
+    """Devin leaves a session that has said its piece in `waiting_for_user`,
+    which read literally tells the human to go and answer a finished scan."""
+    reported = session(
+        None,
+        status="running",
+        status_detail="waiting_for_user",
+        tags=["superset-remediation", "role:scan"],
+        output={"issues_filed": [1, 2], "classes_proposed": []},
+    )
+    assert human_status(reported) == "finished"
+    assert session_view(reported)["result"] == "2 issues filed"
+    assert human_status(session(1, status="running", status_detail="waiting_for_user")) == (
+        "waiting on you"
+    )
+
+
+def test_a_session_is_described_in_words_a_person_would_use():
+    assert human_status(session(1, status="error", status_detail=None)) == "failed"
+    assert human_status(session(1, status_detail="user_usage_limit_exceeded")) == "out of budget"
+    assert human_status(session(1, status="suspended", status_detail="inactivity")) == (
+        "stopped early"
+    )
+    assert human_status(session(1, "pr_opened_validated")) == "finished"
+    # Reporting that it is stuck is not the same as being done.
+    assert human_status(session(1, "blocked")) == "waiting on you"
+    assert duration(45) == "45s" and duration(700) == "11m" and duration(7800) == "2h 10m"
+
+
+def test_a_session_view_survives_a_session_that_says_almost_nothing():
+    """Everything below is optional in the API, and a dashboard that raises is
+    worse than one that says nothing."""
+    view = session_view({"session_id": "devin-abc"})
+    assert view["title"] == "(unnamed session)"
+    assert view["running_for"] == "" and view["quiet_for"] == ""
+    assert view["result"] == "" and view["acus"] is None
+    assert view["url"] == "https://app.devin.ai/sessions/abc"
 
 
 def test_rejected_issue_is_cleaned_up_and_distinguished_from_failure(tmp_path):

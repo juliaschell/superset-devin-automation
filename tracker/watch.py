@@ -33,10 +33,29 @@ BUDGET_DETAILS = {
     "total_session_limit_exceeded",
 }
 
+# A scan reports no outcome, only what it did, so these stand in for one.
+REPORTED_KEYS = frozenset({"issues_filed", "classes_proposed"})
+
+# Reporting one of these is not the same as being finished with it.
+OUTCOME_STATUS = {"blocked": "waiting on you", "abandoned": "gave up"}
+
+# A remediation's own verdict, said plainly. The raw values are schema enums.
+OUTCOME_WORDS = {
+    "pr_opened_validated": "PR opened, validation passed",
+    "pr_opened_validation_failed": "PR opened, validation failed",
+    "no_matching_class": "nothing matched an adopted class",
+    "blocked": "needs a human",
+    "abandoned": "gave up",
+}
+
 OUTCOME_TO_STAGE = {
     "pr_opened_validated": "verified",
     "pr_opened_validation_failed": "pr_open",
 }
+
+# How often a session that is still working says so. Long enough not to bury
+# the state changes, short enough that a quiet terminal never means "stuck".
+HEARTBEAT_SECONDS = 300
 
 FAILURE_REASONS = {
     "no_matching_class": "no_matching_class",
@@ -96,22 +115,117 @@ def structured(session: dict[str, Any]) -> dict[str, Any]:
     return out if isinstance(out, dict) else {}
 
 
-def scan_view(session: dict[str, Any]) -> dict[str, Any]:
-    """A scan session as the dashboard shows it: a scan belongs to no issue,
-    so nothing else in here would ever mention it."""
+def session_url(session: dict[str, Any]) -> str:
+    """Where to watch this session work."""
+    url = session.get("url")
+    if isinstance(url, str) and url:
+        return url
     session_id = str(session.get("session_id") or "")
+    return f"https://app.devin.ai/sessions/{session_id.removeprefix('devin-')}"
+
+
+def role(session: dict[str, Any]) -> str:
+    """scan or remediate. Tagged at creation, so it is known from the first
+    cycle — before the session has said anything about what it is doing."""
+    for tag in session.get("tags") or []:
+        if str(tag).startswith("role:"):
+            return str(tag)[len("role:") :]
+    return ""
+
+
+def is_scan(session: dict[str, Any]) -> bool:
+    """Untagged, fall back to the older test: a scan works on the repo, so it
+    is the session that never names an issue."""
+    tagged = role(session)
+    return tagged == "scan" if tagged else issue_number_for(session) is None
+
+
+def human_status(session: dict[str, Any]) -> str:
+    """The status in the words someone watching would use.
+
+    The API's own pair is misleading read literally: a session that has done
+    its job and gone quiet reports `running/waiting_for_user`, and one Devin
+    idled out reports `suspended/inactivity`. What a person wants to know is
+    whether to wait, to answer, or to go and look.
+    """
     status, detail = _status(session)
+    if status == "error":
+        return "failed"
+    if detail in BUDGET_DETAILS:
+        return "out of budget"
+    # A session that has filed its report is done, whatever it says
+    # afterwards — and what it says afterwards is `waiting_for_user`.
     out = structured(session)
+    outcome = str(out.get("outcome") or "")
+    # Two of the outcomes a remediation can report are not endings.
+    if outcome in OUTCOME_STATUS:
+        return OUTCOME_STATUS[outcome]
+    if outcome or out.keys() & REPORTED_KEYS or detail == FINISHED_DETAIL or status == "exit":
+        return "finished"
+    if is_blocked(session):
+        return "waiting on you"
+    if status == "suspended":
+        return "stopped early"
+    return "working"
+
+
+def duration(seconds: float | None) -> str:
+    """Elapsed time as a person would say it."""
+    if seconds is None or seconds < 0:
+        return ""
+    if seconds < 90:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        return f"{int(seconds // 60)}m"
+    hours, minutes = divmod(int(seconds // 60), 60)
+    return f"{hours}h {minutes}m"
+
+
+def session_result(session: dict[str, Any]) -> str:
+    """What the session has to show for itself so far."""
+    out = structured(session)
+    if is_scan(session):
+        return scan_counts(out)
+    outcome = out.get("outcome")
+    return OUTCOME_WORDS.get(str(outcome), str(outcome or ""))
+
+
+def session_view(session: dict[str, Any], now: float | None = None) -> dict[str, Any]:
+    """A session as a person reading the dashboard needs it: what kind of work,
+    what it is working on, how it is going, and what has come of it.
+
+    Devin names the session after the task it was given, which is a better
+    answer to "what is it doing" than anything this side could reconstruct.
+    """
+    now = now or time.time()
+    started = _started_at(session)
+    updated = epoch(session.get("updated_at"))
     return {
-        "session_id": session_id,
-        "status": f"{status}/{detail}" if detail else status,
-        "started_at": _started_at(session),
-        "url": f"https://app.devin.ai/sessions/{session_id.removeprefix('devin-')}",
-        "issues_filed": len(out["issues_filed"]) if isinstance(out.get("issues_filed"), list) else None,
-        "classes_proposed": (
-            len(out["classes_proposed"]) if isinstance(out.get("classes_proposed"), list) else None
-        ),
+        "session_id": str(session.get("session_id") or ""),
+        "kind": "scan" if is_scan(session) else "fix",
+        "issue_number": issue_number_for(session),
+        "title": session.get("title") or "(unnamed session)",
+        "url": session_url(session),
+        "status": human_status(session),
+        "started_at": started,
+        "running_for": duration(now - started) if started else "",
+        # Time since Devin last touched it. A working session that has been
+        # silent far longer than it has been alive is the one worth opening.
+        "quiet_for": duration(now - updated) if updated else "",
+        "pr_url": pr_url_for(session),
+        "result": session_result(session),
+        "acus": session.get("acus_consumed") or None,
     }
+
+
+def scan_counts(out: dict[str, Any]) -> str:
+    """How much a scan got through, as counts."""
+    counts = {
+        "issues filed": out.get("issues_filed"),
+        "classes proposed": out.get("classes_proposed"),
+        "skipped": out.get("skipped"),
+    }
+    return ", ".join(f"{len(v)} {name}" for name, v in counts.items() if isinstance(v, list) and v)
 
 
 def scan_summary(session: dict[str, Any]) -> str:
@@ -123,12 +237,7 @@ def scan_summary(session: dict[str, Any]) -> str:
     out = structured(session)
     if not out:
         return "no report"
-    counts = {
-        "issues filed": out.get("issues_filed"),
-        "classes proposed": out.get("classes_proposed"),
-        "skipped": out.get("skipped"),
-    }
-    line = ", ".join(f"{len(v)} {name}" for name, v in counts.items() if isinstance(v, list) and v)
+    line = scan_counts(out)
     urls = sorted(
         {
             item["pr_url"]
@@ -252,6 +361,10 @@ class Watcher:
         # Scan sessions are attached to no issue by nature. Logged on the two
         # cycles that mean something rather than all ~2,800 of the day's.
         self._scans: dict[str, str] = {}
+        # When each in-flight session last said it was still working, and which
+        # ones have already reported being stuck.
+        self._beats: dict[str, float] = {}
+        self._stuck: set[str] = set()
 
     # ------------------------------------------------------------------ pass
 
@@ -313,7 +426,7 @@ class Watcher:
             for s in self.devin.list_sessions(tags=[self.config.session_tag])
             if belongs_to(s, self.config.repo)
         ]
-        scans: list[dict[str, Any]] = []
+        views: list[dict[str, Any]] = []
         # Oldest first, so when an issue has several attempts the row ends the
         # cycle describing the newest one.
         for session in sorted(sessions, key=lambda s: _started_at(s) or 0.0):
@@ -323,12 +436,14 @@ class Watcher:
                 "acus_consumed": self.devin.session_acus(str(session.get("session_id") or "")),
             }
             session_id = session.get("session_id")
+            # Every session gets a row of its own. A remediation only names its
+            # issue once it reports, and until then the task table cannot show
+            # it at all — which is exactly the hour someone is watching.
+            views.append(session_view(session))
             number = issue_number_for(session)
             if number is None:
-                # A scan works on the repo, not on an issue, so it is shown as
-                # itself instead of being filed under a task that cannot exist.
-                scans.append(scan_view(session))
-                self.log_scan(session)
+                if is_scan(session):
+                    self.log_scan(session)
                 continue
             task = self.store.get_task(number)
             update = task_update_from_session(session)
@@ -343,7 +458,12 @@ class Watcher:
                         "attempt", issue_number=number, session_id=session_id, detail="rework"
                     )
                 else:
-                    self.store.log("dispatched", issue_number=number, session_id=session_id)
+                    self.store.log(
+                        "dispatched",
+                        issue_number=number,
+                        session_id=session_id,
+                        detail=session_url(session),
+                    )
             self.store.upsert_task(number, **update)
 
             reason = failure_reason(session, self.config.session_timeout_seconds)
@@ -366,13 +486,18 @@ class Watcher:
                 )
                 self.store.upsert_task(number, settled_at=settled)
             self.store.advance(number, stage)
-        self.store.set_scans(sorted(scans, key=lambda s: s["started_at"] or 0.0, reverse=True)[:5])
+            self.note_progress(number, session, stage)
+        self.store.set_sessions(
+            sorted(views, key=lambda s: s["started_at"] or 0.0, reverse=True)[:8]
+        )
         return len(sessions)
 
     def log_scan(self, session: dict[str, Any]) -> None:
         """A scan's two moments: it started, and here is what came of it."""
         session_id = str(session.get("session_id") or "")
-        phase = "finished" if is_done(session) else "started"
+        # By its own status a scan never ends: it reports, then sits in
+        # `waiting_for_user` forever. Having reported is what finished means.
+        phase = "finished" if human_status(session) == "finished" else "started"
         seen = self._scans.get(session_id)
         if phase == seen or seen == "finished":
             return
@@ -380,7 +505,44 @@ class Watcher:
         self.store.log(
             f"scan_{phase}",
             session_id=session_id,
-            detail=scan_summary(session) if phase == "finished" else scan_view(session)["url"],
+            detail=scan_summary(session) if phase == "finished" else session_url(session),
+        )
+
+    def note_progress(self, number: int, session: dict[str, Any], stage: str) -> None:
+        """Say that a session is still working, or that it is waiting on a human.
+
+        A remediation can run for the better part of an hour, and between
+        `dispatched` and its PR it produces no state change at all. Without
+        this, a working session and a dead one look the same from the terminal.
+        """
+        session_id = str(session.get("session_id") or "")
+        if is_blocked(session):
+            if session_id not in self._stuck:
+                self._stuck.add(session_id)
+                self.store.log(
+                    "waiting",
+                    issue_number=number,
+                    session_id=session_id,
+                    detail=f"needs an answer from you — {session_url(session)}",
+                )
+            return
+        if is_done(session) or stage != "running":
+            self._beats.pop(session_id, None)
+            return
+        now = time.time()
+        # The first sighting needs no heartbeat: `dispatched` just said all of
+        # this, on the same line.
+        since = self._beats.setdefault(session_id, now)
+        if now - since < HEARTBEAT_SECONDS:
+            return
+        self._beats[session_id] = now
+        started = _started_at(session)
+        minutes = f"{int((now - started) // 60)}m " if started else ""
+        self.store.log(
+            "working",
+            issue_number=number,
+            session_id=session_id,
+            detail=f"{minutes}{session_url(session)}",
         )
 
     def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:

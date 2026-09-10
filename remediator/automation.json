@@ -32,7 +32,7 @@
   ],
   "limits": {
     "max_acu_limit": 20,
-    "invocations": {"max_per_window": 12, "window_seconds": 86400}
+    "invocations": {"max_per_window": 50, "window_seconds": 86400}
   },
   "concurrency": {"max_concurrent_runs": 2, "max_queue_depth": 10},
   "session_settings": {

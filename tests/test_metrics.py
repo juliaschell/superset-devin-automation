@@ -91,6 +91,16 @@ def test_attempts_are_averaged_over_dispatched_issues(tmp_path):
     assert metrics["reworked_issues"] == 1
 
 
+def test_changes_requested_is_measured_over_prs_a_human_could_judge(tmp_path):
+    """The denominator is PRs opened, not issues: an issue that never reached
+    a PR is not one a human declined to send back."""
+    store = seed(tmp_path)
+    store.upsert_task(2, changes_requested=1)
+    metrics = compute(store)
+    assert metrics["changes_requested_prs"] == 1
+    assert metrics["changes_requested_rate"] == 50.0
+
+
 def test_per_class_rates(tmp_path):
     metrics = compute(seed(tmp_path))
     assert metrics["per_class"]["stale-dep"]["success_rate"] == 50.0

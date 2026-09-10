@@ -1,5 +1,5 @@
 {
-  "_doc": "Two doors, one prompt. Door A: an issue is labelled devin:ready (by the scanner or by a human). Door B: a human requests changes on a PR we opened, which re-runs the work on a corrected problem. Keys prefixed with _ are stripped before POST.",
+  "_doc": "One door: an issue is labelled devin:ready, by the scanner or by a human. Reworking a PR after review is deliberately not here — Devin's own PR comment monitoring already answers reviews on the PRs these sessions open, and a second trigger only races it. The tracker measures how often that happens instead. Keys prefixed with _ are stripped before POST.",
   "name": "Superset — remediate",
   "enabled": true,
   "run_as": {"type": "organization"},
@@ -13,21 +13,6 @@
               {"field": "repository.full_name", "operator": "eq", "value": "{{REPO}}"},
               {"field": "action", "operator": "eq", "value": "labeled"},
               {"field": "label.name", "operator": "eq", "value": "devin:ready"}
-            ]
-          }
-        ]
-      },
-      "replies": [{"type": "post_response"}]
-    },
-    {
-      "event_type": "github:pull_request_review",
-      "conditions": {
-        "any": [
-          {
-            "all": [
-              {"field": "repository.full_name", "operator": "eq", "value": "{{REPO}}"},
-              {"field": "action", "operator": "eq", "value": "submitted"},
-              {"field": "review.state", "operator": "eq", "value": "changes_requested"}
             ]
           }
         ]

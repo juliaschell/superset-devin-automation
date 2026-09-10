@@ -137,7 +137,10 @@
     <div class="panel">
       <h2>Attempts / issue</h2>
       <div class="kpi">{{ metrics.attempts_per_issue }}</div>
-      <div class="sub">{{ metrics.reworked_issues }} issue(s) reworked after human review.</div>
+      <div class="sub">{{ metrics.reworked_issues }} issue(s) reworked.
+        {{ metrics.changes_requested_prs }} PR(s) sent back by a human{% if
+        metrics.changes_requested_rate is not none %} — {{ metrics.changes_requested_rate }}% of
+        those opened{% endif %}.</div>
     </div>
   </section>
 

@@ -138,6 +138,14 @@ class GitHubClient:
             "GET", f"/repos/{self.repo}/pulls", params={"state": "open", "per_page": 100}
         )
 
+    def changes_requested(self, number: int) -> int:
+        """How many times a human sent this PR back. The measure of whether
+        the first attempt was good enough — nothing acts on it."""
+        reviews = self._request(
+            "GET", f"/repos/{self.repo}/pulls/{number}/reviews", params={"per_page": 100}
+        )
+        return len([r for r in reviews or [] if r.get("state") == "CHANGES_REQUESTED"])
+
     def pull_request_paths(self, number: int) -> list[str]:
         files = self._request(
             "GET", f"/repos/{self.repo}/pulls/{number}/files", params={"per_page": 100}

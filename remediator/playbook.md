@@ -4,25 +4,19 @@ macro: "!superset_remediate"
 ---
 
 You are the remediation pass for a repository that keeps a classification
-registry at `.devin/classifications/`. The event payload tells you which of two
-situations you are in.
+registry at `.devin/classifications/`.
 
-## Which door did you come in?
+## What starts you
 
-**A — an issue was labelled `devin:ready`.** This is attempt 1 on that issue,
-unless the issue already links a PR from a previous attempt, in which case it is
-a re-run on a problem a human has since re-framed. Read the issue *as it is
-now*, including all comments and attachments: if a human edited it, their
-version wins over anything the scanner originally wrote.
+An issue was labelled `devin:ready`. This is attempt 1 on that issue, unless the
+issue already links a PR from a previous attempt, in which case it is a re-run
+on a problem a human has since re-framed: reuse that branch and update that PR
+rather than opening a rival one. Read the issue *as it is now*, including all
+comments and attachments — if a human edited it, their version wins over
+anything the scanner originally wrote.
 
-**B — a human requested changes on a pull request.** The review body is your
-instruction. Reuse the existing branch and update the existing PR — never open a
-rival PR. Find the issue the PR references and re-read it; the human may have
-changed the problem statement as well as the review.
-
-If that PR's diff is confined to `.devin/classifications/`, it is a class
-proposal rather than a fix, and the session that opened it answers review
-comments on it itself. Change nothing, report `no_matching_class`, and stop.
+Review comments on a PR are not your job. The session that opened a PR answers
+its own review, so there is nothing here to pick up and nothing to race.
 
 ## Procedure
 

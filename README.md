@@ -106,6 +106,9 @@ Definitions are choices, so they are stated rather than implied:
 - **Autonomy** is measured over everything that settled *or* needed a human. Over
   successes alone it reads ~100%: the blocked session, the clearest possible loss
   of autonomy, would not be in the denominator.
+- **Sent back** = a PR a human reviewed with *request changes*, over the PRs
+  opened. Nothing in this system reacts to it — the PR's own session answers the
+  review — so it is a clean read on how often a first attempt is not good enough.
 - **Rejection is not failure.** Rejection judges the scanner — we fixed something
   nobody wanted. Failure judges the fixer.
 - **The funnel is cumulative** ("ever reached"), not current state, which renders
@@ -154,10 +157,10 @@ Definitions are choices, so they are stated rather than implied:
               │                                              
       ┌───────┴─────────────┬──────────────────────┐         
       ▼                     ▼                      ▼         
-  human: merge   human: request changes   human: label issue  
-                  → attempt 2 on the      devin:rejected      
-                    same branch           → PR, branch and    
-                                            issue closed      
+  human: merge     human: comment        human: label issue  
+                  → the PR's own         devin:rejected      
+                    session revises it   → PR, branch and    
+                    (counted as rework)    issue closed      
 
 
   Throughout: the tracker polls Devin and GitHub, records every transition,
@@ -241,7 +244,7 @@ quietly grade its own homework. What makes a good one is in
 | You want to… | You do… |
 |---|---|
 | accept the fix | merge it (with or without modifying by hand) |
-| ask Devin for changes | request changes on the PR; that alone starts attempt 2 on the same branch |
+| ask Devin for changes | comment on the PR. The session that opened it answers with commits to the same branch — nothing here re-triggers, and the tracker counts the PR as sent back so the rate is visible |
 | reject the finding | label the *issue* `devin:rejected` — the loop closes the PR, deletes the branch, closes the issue, and counts it as rejected rather than failed |
 | add work by hand | open an issue and label it `devin:ready` |
 | re-run a corrected issue | remove and re-apply the `devin:ready` label |

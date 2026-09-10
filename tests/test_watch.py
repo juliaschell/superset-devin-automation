@@ -53,10 +53,15 @@ class FakeGitHub:
         self.pull_requests: dict[int, dict[str, Any]] = {}
         self.open_prs: list[dict[str, Any]] = []
         self.paths: dict[int, list[str]] = {}
+        self.reviews: dict[int, int] = {}
         self.calls: list[str] = []
 
     def open_pull_requests(self) -> list[dict[str, Any]]:
         return self.open_prs
+
+    def changes_requested(self, number: int) -> int:
+        self.calls.append(f"reviews:{number}")
+        return self.reviews.get(number, 0)
 
     def pull_request_paths(self, number: int) -> list[str]:
         self.calls.append(f"files:{number}")
@@ -356,12 +361,45 @@ def test_the_human_queue_is_read_from_github_not_from_the_funnel(tmp_path):
 
     watcher.sync_waiting()
     assert [w["kind"] for w in store.waiting()] == ["fix for #4", "class proposal"]
-    # A known fix costs no extra call: the task already says what it is.
-    assert github.calls == ["files:2"]
+    # A known fix costs no file listing: the task already says what it is.
+    assert github.calls == ["reviews:1", "files:2"]
 
     github.open_prs = []
     watcher.sync_waiting()
     assert store.waiting() == []
+
+
+def test_a_review_is_counted_and_nothing_is_started(tmp_path):
+    """Devin's own comment monitoring reworks the PR. All this loop does with
+    a changes_requested review is count it, once per review."""
+    store, github, watcher = build(tmp_path)
+    store.upsert_task(4, pr_url="https://github.com/o/r/pull/1", validation_passed=1)
+    github.open_prs = [pr(1)]
+    github.reviews[1] = 1
+
+    watcher.sync_waiting()
+    assert store.get_task(4)["changes_requested"] == 1
+    assert store.waiting()[0]["do"].startswith("you asked for changes")
+    sent_back = [e for e in store.events() if e["kind"] == "changes_requested"]
+    assert len(sent_back) == 1
+
+    watcher.sync_waiting()  # same review, seen again
+    assert len([e for e in store.events() if e["kind"] == "changes_requested"]) == 1
+
+    github.reviews[1] = 2
+    watcher.sync_waiting()
+    assert store.get_task(4)["changes_requested"] == 2
+    assert len([e for e in store.events() if e["kind"] == "changes_requested"]) == 2
+
+
+def test_a_pr_nobody_sent_back_is_not_counted_as_rework(tmp_path):
+    store, github, watcher = build(tmp_path)
+    store.upsert_task(4, pr_url="https://github.com/o/r/pull/1", validation_passed=1)
+    github.open_prs = [pr(1)]
+
+    watcher.sync_waiting()
+    assert store.get_task(4)["changes_requested"] == 0
+    assert store.waiting()[0]["do"].startswith("merge it")
 
 
 def test_scan_summary_says_so_when_a_scan_found_nothing():

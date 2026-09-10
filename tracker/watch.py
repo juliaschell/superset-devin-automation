@@ -53,6 +53,10 @@ OUTCOME_TO_STAGE = {
     "pr_opened_validation_failed": "pr_open",
 }
 
+# The registry lives in the fork. A PR that touches nothing else is a class
+# proposal — the scan's output when it has no rules yet — not a fix.
+REGISTRY_DIR = ".devin/classifications/"
+
 # How often a session that is still working says so. Long enough not to bury
 # the state changes, short enough that a quiet terminal never means "stuck".
 HEARTBEAT_SECONDS = 300
@@ -357,6 +361,54 @@ def failure_reason(session: dict[str, Any], timeout_seconds: int, now: float | N
     return None
 
 
+def waiting_item(
+    pr: dict[str, Any],
+    task: dict[str, Any] | None,
+    paths: list[str] | None,
+    now: float | None = None,
+) -> dict[str, Any]:
+    """An open PR as a to-do: what it is, and what the human does with it.
+
+    The loop stops at every one of these by design, so a PR nobody has looked
+    at is not a stalled system — but it is indistinguishable from one unless
+    the dashboard says whose turn it is.
+    """
+    opened = epoch(pr.get("created_at"))
+    item = {
+        "url": pr.get("html_url") or "",
+        "title": pr.get("title") or "",
+        "waiting_for": duration((now or time.time()) - opened) if opened else "",
+    }
+    if task:
+        passed = task.get("validation_passed")
+        return {
+            **item,
+            "kind": f"fix for #{task['issue_number']}",
+            "what": task.get("classification") or task.get("title") or "",
+            "do": (
+                "merge it — validation passed"
+                if passed == 1
+                else "rework or reject — validation did not pass"
+                if passed == 0
+                else "review — the session never reported a validation run"
+            ),
+        }
+    if paths and all(p.startswith(REGISTRY_DIR) for p in paths):
+        return {
+            **item,
+            "kind": "class proposal",
+            "what": f"{len(paths)} detection class(es)",
+            "do": "merge to switch detection on, or comment to revise",
+        }
+    return {**item, "kind": "pull request", "what": "", "do": "review"}
+
+
+def opened_by_devin(pr: dict[str, Any]) -> bool:
+    """The app's login, not a name match: a contributor called devin-something
+    opened their PR for their own reasons."""
+    return str((pr.get("user") or {}).get("login", "")).startswith("devin-ai-integration")
+
+
 class Watcher:
     def __init__(self, store: Store, devin: Any, github: Any, config: Any) -> None:
         self.store = store
@@ -376,7 +428,7 @@ class Watcher:
     def cycle(self) -> dict[str, int]:
         """One pass. Never raises: a failed cycle records itself and the
         dashboard's freshness stamp is what tells you."""
-        stats = {"issues": 0, "sessions": 0, "cleaned": 0, "errors": 0}
+        stats = {"issues": 0, "sessions": 0, "waiting": 0, "cleaned": 0, "errors": 0}
         try:
             stats["issues"] = self.sync_issues()
         except Exception as exc:  # noqa: BLE001 - a broken cycle must not kill the loop
@@ -387,6 +439,11 @@ class Watcher:
         except Exception as exc:  # noqa: BLE001
             stats["errors"] += 1
             self.store.log("error", detail=f"sync_sessions: {exc}")
+        try:
+            stats["waiting"] = self.sync_waiting()
+        except Exception as exc:  # noqa: BLE001
+            stats["errors"] += 1
+            self.store.log("error", detail=f"sync_waiting: {exc}")
         try:
             stats["cleaned"] = self.cleanup_rejected()
         except Exception as exc:  # noqa: BLE001
@@ -496,6 +553,25 @@ class Watcher:
             sorted(views, key=lambda s: s["started_at"] or 0.0, reverse=True)[:8]
         )
         return len(sessions)
+
+    def sync_waiting(self) -> int:
+        """The human's queue: open PRs the loop will not advance on its own.
+
+        Read from GitHub rather than inferred from the funnel, because a PR
+        merged or closed in the browser has to leave this list, and because a
+        class proposal belongs to a scan that will scroll off the session view
+        long before anyone gets to it.
+        """
+        by_url = {t["pr_url"]: t for t in self.store.tasks() if t.get("pr_url")}
+        items = []
+        for pr in self.github.open_pull_requests():
+            task = by_url.get(pr.get("html_url"))
+            if task is None and not opened_by_devin(pr):
+                continue  # someone else's PR is not this loop's business
+            paths = None if task else self.github.pull_request_paths(pr["number"])
+            items.append(waiting_item(pr, task, paths))
+        self.store.set_waiting(items)
+        return len(items)
 
     def log_scan(self, session: dict[str, Any]) -> None:
         """A scan's two moments: it started, and here is what came of it."""

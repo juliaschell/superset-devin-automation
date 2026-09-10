@@ -89,7 +89,7 @@ same four values. Every Make target says who it is for in the comment above it.
 
 | Path | |
 |---|---|
-| `/` | dashboard: funnel, rates, per-class table, live task list |
+| `/` | dashboard: what is waiting on you, funnel, rates, per-class table, live task list |
 | `/report.md` | the same numbers as a write-up, sample size first |
 | `/metrics` | Prometheus |
 | `/metrics.json` | the same numbers as JSON |

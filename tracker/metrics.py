@@ -194,7 +194,12 @@ def prometheus(metrics: dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: str) -> str:
+def report_markdown(
+    metrics: dict[str, Any],
+    tasks: list[dict[str, Any]],
+    repo: str,
+    waiting: list[dict[str, Any]] | None = None,
+) -> str:
     """The write-up, methodology first: the rates mean nothing without the
     sample size they were taken over."""
     t = metrics["totals"]
@@ -235,6 +240,17 @@ def report_markdown(metrics: dict[str, Any], tasks: list[dict[str, Any]], repo: 
         "|---|---|",
     ]
     lines += [f"| {stage} | {count} |" for stage, count in metrics["funnel"].items()]
+
+    lines += ["", "## Waiting on a human", ""]
+    if waiting:
+        lines += ["| PR | What | Your move | Open for |", "|---|---|---|---|"]
+        for w in waiting:
+            what = " · ".join(filter(None, [w["kind"], w["what"]]))
+            lines.append(
+                f"| [{w['title']}]({w['url']}) | {what} | {w['do']} | {w['waiting_for']} |"
+            )
+    else:
+        lines.append("Nothing open. Every PR this loop produced has been decided.")
 
     lines += ["", "## Why work failed", ""]
     if metrics["failure_taxonomy"]:

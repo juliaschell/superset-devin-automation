@@ -133,6 +133,17 @@ class GitHubClient:
     def get_pull_request(self, number: int) -> dict[str, Any]:
         return self._request("GET", f"/repos/{self.repo}/pulls/{number}")
 
+    def open_pull_requests(self) -> list[dict[str, Any]]:
+        return self._request(
+            "GET", f"/repos/{self.repo}/pulls", params={"state": "open", "per_page": 100}
+        )
+
+    def pull_request_paths(self, number: int) -> list[str]:
+        files = self._request(
+            "GET", f"/repos/{self.repo}/pulls/{number}/files", params={"per_page": 100}
+        )
+        return [str(f.get("filename", "")) for f in files or []]
+
     def delete_branch(self, branch: str) -> Any:
         return self._request("DELETE", f"/repos/{self.repo}/git/refs/heads/{branch}")
 

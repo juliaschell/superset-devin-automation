@@ -28,6 +28,7 @@
     .fresh { border-color:var(--ok); color:var(--ok); }
     .stale { border-color:var(--bad); color:var(--bad); }
     .setup { border-color:var(--warn); background:#231b09; }
+    .todo { border-color:var(--warn); }
     .setup ol { margin:8px 0 0; padding-left:20px; }
   </style>
 </head>
@@ -63,6 +64,25 @@
     </ol>
     <div class="sub">Then run <code>make scan</code> rather than waiting for 02:00 PT. This panel
       disappears as soon as a session starts.</div>
+  </section>
+  {% endif %}
+
+  {% if waiting %}
+  <section class="panel todo">
+    <h2 class="warn">Waiting on you — {{ waiting|length }} open PR(s)</h2>
+    <table>
+      <tr><th>pull request</th><th>what it is</th><th>your move</th><th>open for</th></tr>
+      {% for w in waiting %}
+      <tr>
+        <td><a href="{{ w.url }}">{{ w.title[:70] }}</a></td>
+        <td><span class="dim">{{ w.kind }}</span>{% if w.what %} · {{ w.what }}{% endif %}</td>
+        <td>{{ w.do }}</td>
+        <td class="dim">{{ w.waiting_for or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    <div class="sub">The loop stops at each of these on purpose — nothing here merges itself, and
+      nothing below it moves until one of them is decided.</div>
   </section>
   {% endif %}
 

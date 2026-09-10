@@ -410,13 +410,13 @@ def waiting_item(
             "kind": f"fix for #{task['issue_number']}",
             "what": task.get("classification") or task.get("title") or "",
             "do": (
-                "you asked for changes — Devin answers on the PR"
+                "sent back — Devin is answering"
                 if (task.get("changes_requested") or 0)
-                else "merge it — validation passed"
+                else "merge"
                 if passed == 1
-                else "rework or reject — validation did not pass"
+                else "rework or reject"
                 if passed == 0
-                else "review — the session never reported a validation run"
+                else "review — validation not reported"
             ),
         }
     if paths and all(p.startswith(REGISTRY_DIR) for p in paths):
@@ -424,7 +424,7 @@ def waiting_item(
             **item,
             "kind": "class proposal",
             "what": f"{len(paths)} detection class(es)",
-            "do": "merge to switch detection on, or comment to revise",
+            "do": "merge or comment",
         }
     return {**item, "kind": "pull request", "what": "", "do": "review"}
 

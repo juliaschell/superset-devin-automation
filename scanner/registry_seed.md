@@ -128,6 +128,12 @@ dashboard reports any run whose actual command differed from it.
   `npm run build` on an unrelated package are the failure mode to avoid.
 - Prefer the repo's own tooling — `pytest`, `npm run type`, `npm audit`,
   targeted `mypy` or `eslint` — over anything bespoke.
+- Where tests cover the files the class touches, run them here too, scoped to
+  those files (`npm run test -- --testPathPattern <basename>`,
+  `pytest tests/unit_tests/<path>`). Grep-plus-type-check proves the pattern is
+  gone; only a test proves the code still does what it did. Where nothing
+  covers them, say so in `## Validate` — an unprovable class is one a reviewer
+  should read more closely, not one to dress up.
 - Not `pre-commit run`. Hook environments are installed by cloning from
   github.com, which the remediation sandbox's git proxy refuses, so a
   `pre-commit` gate fails for a reason that has nothing to do with the fix.

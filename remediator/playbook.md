@@ -20,6 +20,10 @@ instruction. Reuse the existing branch and update the existing PR — never open
 rival PR. Find the issue the PR references and re-read it; the human may have
 changed the problem statement as well as the review.
 
+If that PR's diff is confined to `.devin/classifications/`, it is a class
+proposal rather than a fix, and the session that opened it answers review
+comments on it itself. Change nothing, report `no_matching_class`, and stop.
+
 ## Procedure
 
 1. **Read the rules.** `.devin/classifications/*.md` for the class this issue

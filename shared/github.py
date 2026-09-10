@@ -146,3 +146,15 @@ def pr_number_from_url(url: str) -> int | None:
     if len(parts) >= 2 and parts[-2] == "pull" and parts[-1].isdigit():
         return int(parts[-1])
     return None
+
+
+def repo_from_pr_url(url: str) -> str | None:
+    """``https://github.com/o/r/pull/42`` → ``o/r``.
+
+    A number alone is ambiguous across forks: PR 11 exists on every one of
+    them, and asking the wrong fork about it answers about someone else's work.
+    """
+    parts = [p for p in url.rstrip("/").split("/") if p]
+    if len(parts) >= 4 and parts[-2] == "pull":
+        return f"{parts[-4]}/{parts[-3]}"
+    return None

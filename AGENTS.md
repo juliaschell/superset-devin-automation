@@ -66,7 +66,10 @@ the number there and re-run `make up` to apply it.
 2. The next scan files issues for the adopted classes and labels them
    `devin:ready`, which triggers the remediation automation.
 3. Each remediation session opens a PR that has passed its class's validation
-   command. Nothing merges them.
+   command. Nothing merges them. Review comments on such a PR are answered by
+   the session that opened it, so there is deliberately no trigger here for
+   `changes_requested` — a second one would only race it. What the tracker does
+   instead is count the PRs a human sent back, and report the rate.
 4. The dashboard at `http://localhost:8000` opens with what is waiting on the
    human — every open PR, what it is, and the decision it needs — then the
    funnel; `/report.md` is the same thing written out, and `/healthz` fails if

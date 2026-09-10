@@ -5,8 +5,8 @@
     "issue_number": {"type": "integer"},
     "attempt_kind": {
       "type": "string",
-      "enum": ["first_attempt", "relabel_rerun", "review_rework"],
-      "description": "Which door this session came in: a fresh label, a re-applied label on an edited issue, or a changes_requested review."
+      "enum": ["first_attempt", "relabel_rerun"],
+      "description": "A fresh label, or a re-applied label on an issue a human has since re-framed."
     },
     "classification": {"type": "string"},
     "classification_matched": {

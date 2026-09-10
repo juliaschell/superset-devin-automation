@@ -32,6 +32,7 @@ def compute(store: Store) -> dict[str, Any]:
     rejected = [t for t in tasks if t.get("rejected")]
     merged = [t for t in tasks if t.get("pr_state") == "merged"]
     with_pr = [t for t in tasks if t.get("pr_url")]
+    sent_back = [t for t in with_pr if (t.get("changes_requested") or 0) > 0]
 
     # Settled = we know how it ended. Anything still running is excluded from
     # rates rather than counted as a failure.
@@ -126,6 +127,11 @@ def compute(store: Store) -> dict[str, Any]:
         if attempts
         else 0,
         "reworked_issues": len([t for t in tasks if (t.get("attempts") or 0) > 1]),
+        # A PR a human read and sent back. Nothing in this system reacts to it
+        # — it is the honest measure of how often a first attempt is not good
+        # enough, over the PRs a human has had the chance to judge.
+        "changes_requested_prs": len(sent_back),
+        "changes_requested_rate": _rate(len(sent_back), len(with_pr)),
         "median_time_to_pr_seconds": _median(time_to_pr),
         "median_cycle_seconds": _median(cycle),
         "failure_taxonomy": failure_taxonomy,
@@ -179,6 +185,11 @@ def prometheus(metrics: dict[str, Any]) -> str:
     emit("remediation_verification_pass_rate", metrics["verification_pass_rate"])
     emit("remediation_validation_mismatches", metrics["validation_mismatches"])
     emit("remediation_attempts_per_issue", metrics["attempts_per_issue"])
+    emit(
+        "remediation_changes_requested_rate",
+        metrics["changes_requested_rate"],
+        help_text="PRs a human sent back / PRs opened",
+    )
     emit("remediation_median_time_to_pr_seconds", metrics["median_time_to_pr_seconds"])
     emit("remediation_last_check_seconds", metrics["last_checked_seconds_ago"])
     # Absent rather than zero when the plan does not expose consumption.
@@ -231,6 +242,8 @@ def report_markdown(
         f"| Validation-command mismatches | {metrics['validation_mismatches']} |",
         f"| Attempts per issue | {metrics['attempts_per_issue']} |",
         f"| Issues reworked at least once | {metrics['reworked_issues']} |",
+        f"| PRs a human sent back | {metrics['changes_requested_prs']}"
+        f" ({pct(metrics['changes_requested_rate'])}) |",
         f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |",
         f"| Merged by a human | {t['merged']} |",
         "",

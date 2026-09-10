@@ -40,13 +40,13 @@ def test_scan_is_scheduled_and_manually_runnable():
     assert manual and "devin:scan" in json.dumps(manual)
 
 
-def test_remediator_has_both_entry_points():
-    """Label for new work, changes_requested for rework. The second is the
-    human-rework path and it is easy to lose in an edit."""
+def test_remediator_starts_only_from_a_labelled_issue():
+    """One door on purpose: Devin's own comment monitoring reworks a PR after
+    review, so a changes_requested trigger here would only race it."""
     triggers = {t["event_type"]: t for t in render("remediator", REPO, 8)["triggers"]}
-    assert set(triggers) == {"github:issues", "github:pull_request_review"}
+    assert set(triggers) == {"github:issues"}
     assert "devin:ready" in json.dumps(triggers["github:issues"])
-    assert "changes_requested" in json.dumps(triggers["github:pull_request_review"])
+    assert "labeled" in json.dumps(triggers["github:issues"])
 
 
 def test_every_trigger_is_scoped_to_our_fork():

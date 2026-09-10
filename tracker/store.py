@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS tasks (
     pr_url              TEXT,
     pr_state            TEXT,
     attempts            INTEGER NOT NULL DEFAULT 0,
+    changes_requested   INTEGER NOT NULL DEFAULT 0,
     validate_command    TEXT,
     validate_registry   TEXT,
     validation_passed   INTEGER,
@@ -87,7 +88,10 @@ class Store:
         shape, so a column added later is added here rather than by rebuilding
         the database."""
         have = {row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)")}
-        for name, decl in (("acus", "REAL"),):
+        for name, decl in (
+            ("acus", "REAL"),
+            ("changes_requested", "INTEGER NOT NULL DEFAULT 0"),
+        ):
             if name not in have:
                 self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 

@@ -386,7 +386,9 @@ def waiting_item(
             "kind": f"fix for #{task['issue_number']}",
             "what": task.get("classification") or task.get("title") or "",
             "do": (
-                "merge it — validation passed"
+                "you asked for changes — Devin answers on the PR"
+                if (task.get("changes_requested") or 0)
+                else "merge it — validation passed"
                 if passed == 1
                 else "rework or reject — validation did not pass"
                 if passed == 0
@@ -568,10 +570,31 @@ class Watcher:
             task = by_url.get(pr.get("html_url"))
             if task is None and not opened_by_devin(pr):
                 continue  # someone else's PR is not this loop's business
+            if task:
+                task = {**task, "changes_requested": self.note_review(pr["number"], task)}
             paths = None if task else self.github.pull_request_paths(pr["number"])
             items.append(waiting_item(pr, task, paths))
         self.store.set_waiting(items)
         return len(items)
+
+    def note_review(self, number: int, task: dict[str, Any]) -> int:
+        """Count of times a human sent this PR back, recorded and not acted on.
+
+        Nothing here reruns the work: Devin's own comment monitoring answers
+        reviews on the PR its session opened, and a second trigger would only
+        race it. What the loop owes you is the number — how often a first
+        attempt was not good enough is the measure of whether it is working.
+        """
+        count = self.github.changes_requested(number)
+        before = task.get("changes_requested") or 0
+        if count > before:
+            self.store.upsert_task(task["issue_number"], changes_requested=count)
+            self.store.log(
+                "changes_requested",
+                issue_number=task["issue_number"],
+                detail=f"sent back by a human ({count}) — {task.get('pr_url') or ''}",
+            )
+        return count
 
     def log_scan(self, session: dict[str, Any]) -> None:
         """A scan's two moments: it started, and here is what came of it."""

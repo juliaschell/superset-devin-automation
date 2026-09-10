@@ -12,7 +12,7 @@ import time
 from datetime import datetime
 from typing import Any, NamedTuple
 
-from shared.github import pr_number_from_url
+from shared.github import pr_number_from_url, repo_from_pr_url
 
 from .store import Store
 
@@ -252,11 +252,16 @@ def belongs_to(session: dict[str, Any], repo: str) -> bool:
     """Whether this session is work on ``repo``.
 
     The project tag is the same on every fork, so without this a run against a
-    new fork inherits the sessions of the one before it. Sessions that name no
-    repo predate the tag and are left visible rather than silently dropped.
+    new fork inherits the sessions of the one before it. Sessions that predate
+    the tag are judged by the PR they opened instead, and only one that names
+    no repo at all is left visible rather than silently dropped.
     """
     tagged = [t for t in session.get("tags") or [] if str(t).startswith("repo:")]
-    return not tagged or f"repo:{repo}" in tagged
+    if tagged:
+        return f"repo:{repo}" in tagged
+    url = pr_url_for(session)
+    named = repo_from_pr_url(url) if url else None
+    return named in (None, repo)
 
 
 def issue_number_for(session: dict[str, Any]) -> int | None:
@@ -553,6 +558,8 @@ class Watcher:
         """
         if known == "merged" or not pr_url:
             return PrFacts(known if known == "merged" else None, None, None)
+        if repo_from_pr_url(pr_url) not in (None, self.config.repo):
+            return PrFacts(None, None, None)
         number = pr_number_from_url(pr_url)
         if number is None:
             return PrFacts(None, None, None)
@@ -585,6 +592,8 @@ class Watcher:
                 continue
             self.store.upsert_task(number, rejected=1, outcome="human_rejected")
             pr_url = (task or {}).get("pr_url")
+            if pr_url and repo_from_pr_url(pr_url) not in (None, self.config.repo):
+                pr_url = None
             pr_number = pr_number_from_url(pr_url) if pr_url else None
             if pr_number:
                 pr = self.github.get_pull_request(pr_number)

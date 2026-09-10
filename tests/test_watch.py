@@ -278,6 +278,37 @@ def test_sessions_tagged_with_another_fork_are_not_this_run(tmp_path):
     assert store.get_task(1)["session_id"] == "mine"
 
 
+def test_an_untagged_session_is_judged_by_the_pr_it_opened(tmp_path):
+    """Sessions from before the tag existed still name their fork in the PR
+    they opened, and issue numbers collide across forks: the previous fork's
+    issue 7 is a different problem from this one's."""
+    assert belongs_to(session(7, output={"pr_url": "https://github.com/o/r/pull/3"}), "o/r")
+    assert not belongs_to(session(7, output={"pr_url": "https://github.com/o/old/pull/3"}), "o/r")
+
+    store, _, watcher = build(tmp_path, issues={"devin:ready": [issue(7)]})
+    watcher.devin = FakeDevin(
+        [
+            session(
+                7,
+                "pr_opened_validated",
+                session_id="theirs",
+                output={"pr_url": "https://github.com/o/old/pull/3"},
+            )
+        ]
+    )
+    watcher.cycle()
+    assert store.get_task(7)["session_id"] is None
+
+
+def test_a_pr_on_another_fork_is_never_asked_about_by_number(tmp_path):
+    """PR 3 exists on every fork. Resolving a foreign URL against this repo
+    reads another fork's merge as this issue's, and merged is terminal."""
+    store, github, watcher = build(tmp_path)
+    github.pull_requests[3] = {"state": "closed", "merged_at": "2026-09-01T00:00:00Z", "head": {}}
+    assert watcher.pr_facts("https://github.com/o/old/pull/3").state is None
+    assert watcher.pr_facts("https://github.com/o/r/pull/3").state == "merged"
+
+
 def test_scan_summary_says_so_when_a_scan_found_nothing():
     """An empty report is a result, and reads as a broken run if left blank."""
     assert scan_summary(session(None, output={"issues_filed": [], "classes_proposed": []})) == (

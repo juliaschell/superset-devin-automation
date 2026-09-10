@@ -268,6 +268,30 @@ def belongs_to(session: dict[str, Any], repo: str) -> bool:
     return named in (None, repo)
 
 
+def predates(session: dict[str, Any], born: float | None) -> bool:
+    """Whether this session ran before the current fork existed.
+
+    A `repo:` tag names a fork but not *which* fork: a name that was deleted
+    and forked again reads the same, and the old sessions come back as scans
+    reporting issues and PRs that are gone.
+    """
+    started = _started_at(session)
+    return bool(born and started and started < born)
+
+
+def fork_identity(github: Any) -> tuple[str | None, float | None]:
+    """GitHub's id for the fork and when it was created.
+
+    Nothing if GitHub cannot be reached: an unreachable API is not evidence
+    that the fork changed, and emptying the database on it would lose a run.
+    """
+    try:
+        repo = github.repository()
+    except Exception:  # noqa: BLE001 - any failure to read it means "unknown"
+        return None, None
+    return str(repo.get("id") or "") or None, epoch(repo.get("created_at"))
+
+
 def issue_number_for(session: dict[str, Any]) -> int | None:
     """Which issue a session is working on, or None while it has not said yet."""
     value = structured(session).get("issue_number")
@@ -386,13 +410,13 @@ def waiting_item(
             "kind": f"fix for #{task['issue_number']}",
             "what": task.get("classification") or task.get("title") or "",
             "do": (
-                "you asked for changes — Devin answers on the PR"
+                "sent back — Devin is answering"
                 if (task.get("changes_requested") or 0)
-                else "merge it — validation passed"
+                else "merge"
                 if passed == 1
-                else "rework or reject — validation did not pass"
+                else "rework or reject"
                 if passed == 0
-                else "review — the session never reported a validation run"
+                else "review — validation not reported"
             ),
         }
     if paths and all(p.startswith(REGISTRY_DIR) for p in paths):
@@ -400,7 +424,7 @@ def waiting_item(
             **item,
             "kind": "class proposal",
             "what": f"{len(paths)} detection class(es)",
-            "do": "merge to switch detection on, or comment to revise",
+            "do": "merge or comment",
         }
     return {**item, "kind": "pull request", "what": "", "do": "review"}
 
@@ -485,10 +509,11 @@ class Watcher:
 
     def sync_sessions(self) -> int:
         """What Devin is doing about it. One call for every in-flight session."""
+        born = self.store.fork_born()
         sessions = [
             s
             for s in self.devin.list_sessions(tags=[self.config.session_tag])
-            if belongs_to(s, self.config.repo)
+            if belongs_to(s, self.config.repo) and not predates(s, born)
         ]
         views: list[dict[str, Any]] = []
         # Oldest first, so when an issue has several attempts the row ends the

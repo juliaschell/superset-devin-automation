@@ -89,3 +89,12 @@ def test_an_existing_registry_is_never_overwritten():
     github = FakeGitHub({}, files={f"{bootstrap.REGISTRY}/README.md"})
     bootstrap.seed_registry(github)
     assert github.calls == []
+
+
+def test_the_dashboard_url_names_its_port_only_when_it_has_one(monkeypatch):
+    """A `*.localhost` name needs no hosts file, so the default has nothing to
+    remember; a moved port has to be said."""
+    monkeypatch.delenv("DASHBOARD_PORT", raising=False)
+    assert bootstrap.dashboard_url() == "http://superset.localhost"
+    monkeypatch.setenv("DASHBOARD_PORT", "8000")
+    assert bootstrap.dashboard_url() == "http://superset.localhost:8000"

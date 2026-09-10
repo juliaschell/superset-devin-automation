@@ -22,7 +22,7 @@ from shared.github import GitHubClient
 
 from . import metrics as metrics_mod
 from .store import Store
-from .watch import Watcher
+from .watch import Watcher, fork_identity
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -43,8 +43,10 @@ def create_app() -> FastAPI:
     store = Store(config.db_path)
     watcher = build_watcher(store)
     # After the configuration is validated, so an empty REPO never becomes the
-    # repo this database claims to be about.
-    store.bind_repo(config.repo)
+    # repo this database claims to be about. Identified by GitHub's id, so a
+    # fork deleted and remade under the same name starts from zero.
+    repo_id, born = fork_identity(watcher.github)
+    store.bind_repo(config.repo, repo_id, born)
     app.state.store = store
     app.state.watcher = watcher
 

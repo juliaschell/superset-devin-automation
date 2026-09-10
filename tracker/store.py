@@ -95,24 +95,67 @@ class Store:
             if name not in have:
                 self.conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {decl}")
 
-    def bind_repo(self, repo: str) -> bool:
+    def bind_repo(
+        self, repo: str, repo_id: str | None = None, born: float | None = None
+    ) -> bool:
         """Point this database at ``repo``, emptying it if it held another.
 
         The database outlives the container it runs in, so pointing the same
         volume at a fresh fork would otherwise measure a funnel of issue
-        numbers that no longer exist. Returns True if anything was discarded.
+        numbers that no longer exist. The name cannot decide that on its own:
+        deleting a fork and forking again under the same name gives a
+        different repository whose issues and PRs start from 1, so GitHub's
+        id is what a repository is. ``born`` is when that repository was
+        created, which also dates the sessions that can be about it.
+
+        Returns True if anything was discarded.
         """
-        previous = self.get_meta("repo")
-        changed = previous is not None and previous != repo
+        was, was_id = self.get_meta("repo"), self.get_meta("repo_id")
+        changed = (was is not None and was != repo) or (
+            was_id is not None and repo_id is not None and was_id != repo_id
+        )
         if changed:
             self.conn.execute("DELETE FROM tasks")
             self.conn.execute("DELETE FROM task_events")
             self.conn.execute("DELETE FROM meta WHERE key <> 'repo'")
             self.conn.commit()
         self.set_meta("repo", repo)
+        if repo_id:
+            self.set_meta("repo_id", repo_id)
+        if born:
+            self.set_meta("fork_born", str(born))
         if changed:
-            self.log("repo_changed", detail=f"{previous} → {repo}: cleared previous state")
+            gone = f"{was}#{was_id}" if was_id else str(was)
+            self.log("repo_changed", detail=f"{gone} → {repo}: cleared previous state")
+        if born:
+            self.forget_before(born)
         return changed
+
+    def forget_before(self, born: float) -> int:
+        """Drop what predates the repository it claims to describe.
+
+        The backstop for a database that recorded a fork of the same name
+        before ids were written down: nothing observed before this repository
+        existed can be about it, and those issue and PR numbers now resolve
+        to nothing.
+        """
+        cursor = self.conn.execute(
+            "DELETE FROM tasks WHERE detected_at IS NOT NULL AND detected_at < ?", (born,)
+        )
+        dropped = cursor.rowcount or 0
+        self.conn.execute("DELETE FROM task_events WHERE ts < ?", (born,))
+        self.conn.commit()
+        if dropped:
+            self.log(
+                "repo_changed",
+                detail=f"dropped {dropped} task(s) older than {self.get_meta('repo')} itself",
+            )
+        return dropped
+
+    def fork_born(self) -> float | None:
+        """When the repository this database describes was created."""
+        value = self.get_meta("fork_born")
+        return float(value) if value else None
 
     # ---------------------------------------------------------------- events
 

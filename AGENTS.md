@@ -32,7 +32,10 @@ make up REPO=owner/superset DEVIN_KEY=... DEVIN_ORG=... GITHUB_TOKEN=...
 make scan    # optional, second terminal: run a scan now, not at 02:00 PT
 ```
 
-That serves http://localhost:8000. `export`ing the four instead works and keeps
+That serves http://superset.localhost — any `*.localhost` name resolves to
+127.0.0.1 in a browser, so there is no hosts file to edit. If something already
+holds port 80, `make up DASHBOARD_PORT=8000 ...` moves it to
+http://superset.localhost:8000. `export`ing the four instead works and keeps
 the secrets out of shell history and `ps`; on a shared machine, prefer it.
 `make scan` goes through the running container, so it needs nothing installed
 and no values re-passed.
@@ -70,7 +73,7 @@ the number there and re-run `make up` to apply it.
    the session that opened it, so there is deliberately no trigger here for
    `changes_requested` — a second one would only race it. What the tracker does
    instead is count the PRs a human sent back, and report the rate.
-4. The dashboard at `http://localhost:8000` opens with what is waiting on the
+4. The dashboard at `http://superset.localhost` opens with what is waiting on the
    human — every open PR, what it is, and the decision it needs — then the
    funnel; `/report.md` is the same thing written out, and `/healthz` fails if
    the watch loop stalls.

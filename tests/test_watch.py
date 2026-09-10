@@ -9,9 +9,12 @@ from tracker.watch import (
     Watcher,
     belongs_to,
     duration,
+    epoch,
     failure_reason,
+    fork_identity,
     human_status,
     issue_number_for,
+    predates,
     scan_summary,
     session_view,
     stage_for_session,
@@ -116,6 +119,25 @@ def test_issue_number_from_structured_output_then_tag():
     assert issue_number_for(session(7)) == 7
     assert issue_number_for({"tags": ["issue-9"], "structured_output": {}}) == 9
     assert issue_number_for({"tags": [], "structured_output": {}}) is None
+
+
+def test_a_session_older_than_the_fork_is_not_this_fork_s():
+    """A `repo:` tag names a fork but not which one, so a name reused after a
+    delete replays the old fork's scans against issues that no longer exist."""
+    assert predates({"created_at": "2026-09-01T00:00:00Z"}, born=None) is False
+    old = {"created_at": "2026-09-01T00:00:00Z"}
+    new = {"created_at": "2026-09-10T00:00:00Z"}
+    born = epoch("2026-09-05T00:00:00Z")
+    assert predates(old, born) is True
+    assert predates(new, born) is False
+
+
+def test_unreachable_github_is_not_evidence_the_fork_changed():
+    class Broken:
+        def repository(self):
+            raise RuntimeError("network")
+
+    assert fork_identity(Broken()) == (None, None)
 
 
 def test_finished_session_without_a_pr_is_not_success():
@@ -339,12 +361,12 @@ def test_an_open_pr_says_which_decision_it_is_waiting_for():
     """Merge, rework and reject are different jobs, and the difference is
     whether the class's own validation command passed."""
     task = {"issue_number": 4, "classification": "cypress-spec-migration", "validation_passed": 1}
-    assert waiting_item(pr(1), task, None)["do"].startswith("merge it")
+    assert waiting_item(pr(1), task, None)["do"] == "merge"
     assert "rework" in waiting_item(pr(1), {**task, "validation_passed": 0}, None)["do"]
 
     proposal = waiting_item(pr(2), None, [".devin/classifications/a.md"])
     assert proposal["kind"] == "class proposal"
-    assert "switch detection on" in proposal["do"]
+    assert proposal["do"] == "merge or comment"
 
 
 def test_the_human_queue_is_read_from_github_not_from_the_funnel(tmp_path):
@@ -379,7 +401,7 @@ def test_a_review_is_counted_and_nothing_is_started(tmp_path):
 
     watcher.sync_waiting()
     assert store.get_task(4)["changes_requested"] == 1
-    assert store.waiting()[0]["do"].startswith("you asked for changes")
+    assert store.waiting()[0]["do"].startswith("sent back")
     sent_back = [e for e in store.events() if e["kind"] == "changes_requested"]
     assert len(sent_back) == 1
 
@@ -399,7 +421,7 @@ def test_a_pr_nobody_sent_back_is_not_counted_as_rework(tmp_path):
 
     watcher.sync_waiting()
     assert store.get_task(4)["changes_requested"] == 0
-    assert store.waiting()[0]["do"].startswith("merge it")
+    assert store.waiting()[0]["do"] == "merge"
 
 
 def test_scan_summary_says_so_when_a_scan_found_nothing():

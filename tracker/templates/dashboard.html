@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta http-equiv="refresh" content="15">
   <title>Superset remediation</title>
   <style>
@@ -50,7 +51,7 @@
     tr:last-child td { border-bottom:none; }
     tbody tr:hover td { background:#161d27; }
     .num, .mono { font-family:var(--mono); }
-    .bar { height:6px; background:#1c232e; border-radius:3px; overflow:hidden; }
+    .bar { height:6px; min-width:120px; background:#1c232e; border-radius:3px; overflow:hidden; }
     .bar span {
       display:block; height:100%; border-radius:3px;
       background:linear-gradient(90deg,var(--accent),var(--violet));
@@ -73,11 +74,13 @@
     .setup ol { margin:10px 0 0; padding-left:20px; }
     .setup li { margin-bottom:4px; }
     code { font-family:var(--mono); background:#1c232e; padding:1px 5px; border-radius:4px; }
-    /* A narrow window scrolls a table sideways rather than clipping its right-hand columns. */
+    /* A table too wide for its panel scrolls sideways; the panel clips its
+       corners, so without this the right-hand columns are simply gone. */
+    .scroll { overflow-x:auto; }
+    .scroll table { white-space:nowrap; }
     @media (max-width:760px) {
       main { padding:16px 14px 32px; }
       .row { grid-template-columns:1fr !important; }
-      .panel table { display:block; overflow-x:auto; white-space:nowrap; }
     }
   </style>
 </head>
@@ -117,7 +120,7 @@
   {% if waiting %}
   <section class="panel todo">
     <h2>Waiting on you <span class="count">· {{ waiting|length }}</span></h2>
-    <table>
+    <div class="scroll"><table>
       <thead><tr><th>pull request</th><th>type</th><th>action</th><th>open for</th></tr></thead>
       <tbody>
       {% for w in waiting %}
@@ -130,14 +133,14 @@
       </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </section>
   {% endif %}
 
   {% if sessions %}
   <section class="panel" style="--tint:var(--violet)">
     <h2>Devin sessions</h2>
-    <table>
+    <div class="scroll"><table>
       <thead><tr><th>session</th><th>status</th><th>running</th><th>quiet for</th><th>result</th></tr></thead>
       <tbody>
       {% for s in sessions %}
@@ -159,7 +162,7 @@
       </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </section>
   {% endif %}
 
@@ -188,7 +191,7 @@
     <div class="panel">
       <h2>Funnel</h2>
       {% set top = metrics.funnel.values()|max if metrics.funnel else 1 %}
-      <table>
+      <div class="scroll"><table>
         <tbody>
         {% for stage, count in metrics.funnel.items() %}
         <tr>
@@ -198,18 +201,18 @@
         </tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </div>
     <div class="panel" style="--tint:var(--bad)">
       <h2>Failures</h2>
       {% if metrics.failure_taxonomy %}
-      <table>
+      <div class="scroll"><table>
         <tbody>
         {% for reason, count in metrics.failure_taxonomy.items() %}
         <tr><td>{{ reason }}</td><td class="bad num">{{ count }}</td></tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
       {% else %}<div class="note">None.</div>{% endif %}
     </div>
   </section>
@@ -217,7 +220,7 @@
   <section class="row" style="grid-template-columns:1fr 1fr;">
     <div class="panel" style="--tint:var(--cyan)">
       <h2>Classifications</h2>
-      <table>
+      <div class="scroll"><table>
         <thead><tr><th>class</th><th>issues</th><th>verified</th><th>rejected</th><th>wrong gate</th></tr></thead>
         <tbody>
         {% for name, bucket in metrics.per_class.items() %}
@@ -230,11 +233,11 @@
         </tr>
         {% endfor %}
         </tbody>
-      </table>
+      </table></div>
     </div>
     <div class="panel">
       <h2>{% if metrics.cost %}Cost and pace{% else %}Pace{% endif %}</h2>
-      <table>
+      <div class="scroll"><table>
         <tbody>
         {% if metrics.cost %}
         <tr><td>this run</td><td class="num">{{ metrics.cost.run_acus }} ACU</td></tr>
@@ -243,13 +246,13 @@
         {% endif %}
         <tr><td>median time to PR</td><td class="num">{{ metrics.median_time_to_pr_seconds or '—' }}s</td></tr>
         </tbody>
-      </table>
+      </table></div>
     </div>
   </section>
 
   <section class="panel">
     <h2>Tasks</h2>
-    <table>
+    <div class="scroll"><table>
       <thead><tr><th>issue</th><th>class</th><th>stage</th><th>outcome</th><th>attempts</th><th>validated</th><th>pr</th></tr></thead>
       <tbody>
       {% for task in tasks %}
@@ -266,12 +269,12 @@
       </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </section>
 
   <section class="panel">
     <h2>Events</h2>
-    <table>
+    <div class="scroll"><table>
       <tbody>
       {% for event in events %}
       <tr>
@@ -281,7 +284,7 @@
       </tr>
       {% endfor %}
       </tbody>
-    </table>
+    </table></div>
   </section>
 </main>
 </body>

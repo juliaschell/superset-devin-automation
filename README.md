@@ -3,7 +3,7 @@
 A nightly automation that finds problem classes in a fork of
 [Apache Superset](https://github.com/apache/superset), files real bugs as GitHub issues, fixes them, proves the fix with a human-approved validation command, and opens a PR with the proposed fix.
 
-The system includes a Devin automation to scan for problems and a separate automation to remediate them. A small service alongside them polls Devin and GitHub and records data and metrics in an SQLite file.
+The system includes a Devin automation to scan for problems and a separate automation to remediate them. A small service alongside them polls Devin and GitHub and records data and metrics in an SQLite database.
 
 **No pull request is ever merged automatically.**
 
@@ -203,8 +203,8 @@ validate: cd superset-frontend && npm audit --audit-level=high
 
 Proposed remediation PRs can be reviewed and merged like normal PRs. 
 
-If a PR is proposed for an issue you don't want fixed, label the issue `devin:rejected`, and the automation will closes the PR, deletes the branch, closes the issue, and counts it as rejected on the metrics board 
+If a PR is proposed for an issue you don't want fixed, label the issue `devin:rejected`, and the automation will close the PR, delete the branch, close the issue, and count it as rejected on the metrics board 
 
-If you want to re-run the full remediation automation on a PR, remove and re-apply the `devin:ready` label on the issue 
+If you want to re-run the full remediation automation on an issue, remove and re-apply the `devin:ready` label on the issue 
 
 ---

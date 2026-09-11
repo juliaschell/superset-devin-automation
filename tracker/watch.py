@@ -1,9 +1,8 @@
-"""Watch Devin and GitHub, write down what happened, clean up rejected work.
+"""Watch Devin and GitHub, record what happened, clean up rejected work.
 
-Devin Automations start every session, so nothing here dispatches: one pass
-reads the issues and sessions, decides what each one means, and records it.
-The decisions are pure functions at the top of the file, so they are testable
-without a network; :class:`Watcher` is the I/O around them.
+Devin Automations start every session, so nothing here dispatches. The
+decisions are pure functions at the top of the file and testable without a
+network; :class:`Watcher` is the I/O around them.
 """
 
 from __future__ import annotations
@@ -16,12 +15,11 @@ from shared.github import pr_number_from_url, repo_from_pr_url
 
 from .store import Store
 
-# A session's lifecycle is two fields: `status` is coarse, and a session that
-# has finished its task still reads `running` with `status_detail: finished`.
+# A session that has finished still reads status `running`, detail `finished`.
 TERMINAL_STATUSES = {"exit", "error", "suspended"}
 FINISHED_DETAIL = "finished"
 BLOCKED_DETAILS = {"waiting_for_user", "waiting_for_approval"}
-# Suspended for lack of budget rather than lack of work.
+# Suspended for lack of budget, not lack of work.
 BUDGET_DETAILS = {
     "usage_limit_exceeded",
     "out_of_credits",
@@ -33,13 +31,13 @@ BUDGET_DETAILS = {
     "total_session_limit_exceeded",
 }
 
-# A scan reports no outcome, only what it did, so these stand in for one.
+# A scan reports counts rather than an outcome; these stand in for one.
 REPORTED_KEYS = frozenset({"issues_filed", "classes_proposed"})
 
 # Reporting one of these is not the same as being finished with it.
 OUTCOME_STATUS = {"blocked": "waiting on you", "abandoned": "gave up"}
 
-# A remediation's own verdict, said plainly. The raw values are schema enums.
+# The schema's outcome enums, in plain words.
 OUTCOME_WORDS = {
     "pr_opened_validated": "PR opened, validation passed",
     "pr_opened_validation_failed": "PR opened, validation failed",
@@ -53,12 +51,10 @@ OUTCOME_TO_STAGE = {
     "pr_opened_validation_failed": "pr_open",
 }
 
-# The registry lives in the fork. A PR that touches nothing else is a class
-# proposal — the scan's output when it has no rules yet — not a fix.
+# A PR touching only this directory is a class proposal, not a fix.
 REGISTRY_DIR = ".devin/classifications/"
 
-# How often a session that is still working says so. Long enough not to bury
-# the state changes, short enough that a quiet terminal never means "stuck".
+# How often a still-working session says so, so silence never means "stuck".
 HEARTBEAT_SECONDS = 300
 
 FAILURE_REASONS = {
@@ -92,8 +88,8 @@ def is_blocked(session: dict[str, Any]) -> bool:
 
 
 def epoch(value: Any) -> float | None:
-    """Epoch seconds from the ISO strings both APIs send. None if unparseable —
-    a zero would look like 1970 and age every session past its timeout."""
+    """Epoch seconds from an ISO string. None if unparseable: a 0 would read as
+    1970 and time every session out."""
     if isinstance(value, int | float):
         return float(value)
     if isinstance(value, str):
@@ -109,18 +105,14 @@ def _started_at(session: dict[str, Any]) -> float | None:
 
 
 def structured(session: dict[str, Any]) -> dict[str, Any]:
-    """The session's own report of what it did.
-
-    The platform leaves ``structured_output`` null on automation-spawned
-    sessions, so :class:`Watcher` fills it in from the final message before
-    these functions see it. One place to read either way.
-    """
+    """The session's own report. ``structured_output`` is null on
+    automation-spawned sessions, so :class:`Watcher` fills it in from the final
+    message before these functions see it."""
     out = session.get("structured_output")
     return out if isinstance(out, dict) else {}
 
 
 def session_url(session: dict[str, Any]) -> str:
-    """Where to watch this session work."""
     url = session.get("url")
     if isinstance(url, str) and url:
         return url
@@ -129,8 +121,7 @@ def session_url(session: dict[str, Any]) -> str:
 
 
 def role(session: dict[str, Any]) -> str:
-    """scan or remediate. Tagged at creation, so it is known from the first
-    cycle — before the session has said anything about what it is doing."""
+    """Return "scan" or "remediate", from the tag set at session creation."""
     for tag in session.get("tags") or []:
         if str(tag).startswith("role:"):
             return str(tag)[len("role:") :]
@@ -138,27 +129,24 @@ def role(session: dict[str, Any]) -> str:
 
 
 def is_scan(session: dict[str, Any]) -> bool:
-    """Untagged, fall back to the older test: a scan works on the repo, so it
-    is the session that never names an issue."""
+    """Untagged sessions fall back to: a scan is the one naming no issue."""
     tagged = role(session)
     return tagged == "scan" if tagged else issue_number_for(session) is None
 
 
 def human_status(session: dict[str, Any]) -> str:
-    """The status in the words someone watching would use.
+    """Whether to wait, to answer, or to go and look.
 
-    The API's own pair is misleading read literally: a session that has done
-    its job and gone quiet reports `running/waiting_for_user`, and one Devin
-    idled out reports `suspended/inactivity`. What a person wants to know is
-    whether to wait, to answer, or to go and look.
+    Read literally the API's own pair misleads: a session that finished and
+    went quiet reports `running/waiting_for_user`, and one Devin idled out
+    reports `suspended/inactivity`.
     """
     status, detail = _status(session)
     if status == "error":
         return "failed"
     if detail in BUDGET_DETAILS:
         return "out of budget"
-    # A session that has filed its report is done, whatever it says
-    # afterwards — and what it says afterwards is `waiting_for_user`.
+    # Having reported is what finished means, whatever the status says after.
     out = structured(session)
     outcome = str(out.get("outcome") or "")
     # Two of the outcomes a remediation can report are not endings.
@@ -195,12 +183,8 @@ def session_result(session: dict[str, Any]) -> str:
 
 
 def session_view(session: dict[str, Any], now: float | None = None) -> dict[str, Any]:
-    """A session as a person reading the dashboard needs it: what kind of work,
-    what it is working on, how it is going, and what has come of it.
-
-    Devin names the session after the task it was given, which is a better
-    answer to "what is it doing" than anything this side could reconstruct.
-    """
+    """One row of the dashboard's session table: what kind of work, how it is
+    going, and what has come of it."""
     now = now or time.time()
     started = _started_at(session)
     updated = epoch(session.get("updated_at"))
@@ -213,8 +197,7 @@ def session_view(session: dict[str, Any], now: float | None = None) -> dict[str,
         "status": human_status(session),
         "started_at": started,
         "running_for": duration(now - started) if started else "",
-        # Time since Devin last touched it. A working session that has been
-        # silent far longer than it has been alive is the one worth opening.
+        # Silent far longer than it has been alive is the one worth opening.
         "quiet_for": duration(now - updated) if updated else "",
         "pr_url": pr_url_for(session),
         "result": session_result(session),
@@ -233,11 +216,8 @@ def scan_counts(out: dict[str, Any]) -> str:
 
 
 def scan_summary(session: dict[str, Any]) -> str:
-    """What a finished scan produced, in one line.
-
-    A scan is the only session whose result is not a PR on an issue, so
-    without this its whole output is a session someone has to open and read.
-    """
+    """What a finished scan produced, in one line. A scan is the only session
+    whose result is not a PR, so otherwise it has to be opened and read."""
     out = structured(session)
     if not out:
         return "no report"
@@ -255,10 +235,9 @@ def scan_summary(session: dict[str, Any]) -> str:
 def belongs_to(session: dict[str, Any], repo: str) -> bool:
     """Whether this session is work on ``repo``.
 
-    The project tag is the same on every fork, so without this a run against a
-    new fork inherits the sessions of the one before it. Sessions that predate
-    the tag are judged by the PR they opened instead, and only one that names
-    no repo at all is left visible rather than silently dropped.
+    The project tag is the same on every fork, so without this a new fork
+    inherits the last one's sessions. Sessions older than the tag are judged by
+    the PR they opened; one naming no repo at all stays visible.
     """
     tagged = [t for t in session.get("tags") or [] if str(t).startswith("repo:")]
     if tagged:
@@ -271,19 +250,19 @@ def belongs_to(session: dict[str, Any], repo: str) -> bool:
 def predates(session: dict[str, Any], born: float | None) -> bool:
     """Whether this session ran before the current fork existed.
 
-    A `repo:` tag names a fork but not *which* fork: a name that was deleted
-    and forked again reads the same, and the old sessions come back as scans
-    reporting issues and PRs that are gone.
+    A `repo:` tag names a fork but not which one: a fork deleted and remade
+    under the same name reads identically, and its old sessions come back
+    reporting issues and PRs that no longer exist.
     """
     started = _started_at(session)
     return bool(born and started and started < born)
 
 
 def fork_identity(github: Any) -> tuple[str | None, float | None]:
-    """GitHub's id for the fork and when it was created.
+    """GitHub's id for the fork, and when it was created.
 
-    Nothing if GitHub cannot be reached: an unreachable API is not evidence
-    that the fork changed, and emptying the database on it would lose a run.
+    Nothing if GitHub cannot be reached: an unreachable API is not evidence the
+    fork changed, and emptying the database on it would lose a run.
     """
     try:
         repo = github.repository()
@@ -293,7 +272,7 @@ def fork_identity(github: Any) -> tuple[str | None, float | None]:
 
 
 def issue_number_for(session: dict[str, Any]) -> int | None:
-    """Which issue a session is working on, or None while it has not said yet."""
+    """Which issue a session is working on, or None until it says."""
     value = structured(session).get("issue_number")
     if isinstance(value, int):
         return value
@@ -309,7 +288,7 @@ def pr_url_for(session: dict[str, Any]) -> str | None:
     out = structured(session)
     if isinstance(out.get("pr_url"), str) and out["pr_url"]:
         return out["pr_url"]
-    # The API's own view, for a session that opened a PR but never reported it.
+    # For a session that opened a PR but never reported it.
     for pr in session.get("pull_requests") or []:
         if isinstance(pr, str) and pr:
             return pr
@@ -326,7 +305,7 @@ def task_update_from_session(session: dict[str, Any]) -> dict[str, Any]:
     status, detail = _status(session)
     update: dict[str, Any] = {
         "session_id": session.get("session_id"),
-        # Both halves: "running" alone hides working vs. waiting vs. done.
+        # Both halves: "running" alone hides working vs waiting vs done.
         "session_status": f"{status}/{detail}" if detail else status,
         "classification": out.get("classification"),
         "validate_command": out.get("validate_command"),
@@ -341,11 +320,9 @@ def task_update_from_session(session: dict[str, Any]) -> dict[str, Any]:
 
 
 def stage_for_session(session: dict[str, Any], pr_state: str | None = None) -> str:
-    """The furthest stage this session's evidence supports.
-
-    Conservative on purpose: a finished session is not a success. Only a
-    validated PR reaches ``verified``, and only GitHub reaches ``merged``.
-    """
+    """The furthest stage this session's evidence supports. A finished session
+    is not a success: only a validated PR reaches ``verified``, and only
+    GitHub reaches ``merged``."""
     out = structured(session)
     outcome = out.get("outcome")
     if pr_state == "merged":
@@ -373,7 +350,7 @@ def failure_reason(session: dict[str, Any], timeout_seconds: int, now: float | N
         return "blocked_on_human"
     if status == "error":
         return "session_error"
-    # Its own reason: the work never got a fair attempt at being fixed.
+    # Its own reason: the work never got a fair attempt.
     if detail in BUDGET_DETAILS:
         return "budget_exhausted"
     if is_done(session) and not out:
@@ -393,9 +370,8 @@ def waiting_item(
 ) -> dict[str, Any]:
     """An open PR as a to-do: what it is, and what the human does with it.
 
-    The loop stops at every one of these by design, so a PR nobody has looked
-    at is not a stalled system — but it is indistinguishable from one unless
-    the dashboard says whose turn it is.
+    The loop stops at every one of these by design, which is indistinguishable
+    from a stalled system unless the dashboard says whose turn it is.
     """
     opened = epoch(pr.get("created_at"))
     item = {
@@ -432,8 +408,8 @@ def waiting_item(
 
 
 def opened_by_devin(pr: dict[str, Any]) -> bool:
-    """The app's login, not a name match: a contributor called devin-something
-    opened their PR for their own reasons."""
+    """Match the app's login, not the name: a human contributor called
+    devin-something opened their PR for their own reasons."""
     return str((pr.get("user") or {}).get("login", "")).startswith("devin-ai-integration")
 
 
@@ -443,8 +419,8 @@ class Watcher:
         self.devin = devin
         self.github = github
         self.config = config
-        # Scan sessions are attached to no issue by nature. Logged on the two
-        # cycles that mean something rather than all ~2,800 of the day's.
+        # A scan belongs to no issue, so it is logged on the two cycles that
+        # mean something rather than on all ~2,800 of the day's.
         self._scans: dict[str, str] = {}
         # When each in-flight session last said it was still working, and which
         # ones have already reported being stuck.
@@ -454,8 +430,8 @@ class Watcher:
     # ------------------------------------------------------------------ pass
 
     def cycle(self) -> dict[str, int]:
-        """One pass. Never raises: a failed cycle records itself and the
-        dashboard's freshness stamp is what tells you."""
+        """One pass. Never raises: a failed cycle records itself, and the
+        dashboard's freshness stamp is what shows it."""
         stats = {"issues": 0, "sessions": 0, "waiting": 0, "cleaned": 0, "errors": 0}
         try:
             stats["issues"] = self.sync_issues()
@@ -493,9 +469,8 @@ class Watcher:
                 number,
                 title=issue.get("title", ""),
                 issue_url=issue.get("html_url", ""),
-                # When GitHub says it was filed, not when this database first
-                # saw it — otherwise a day-long cycle reads as a few seconds on
-                # a service started after the work.
+                # GitHub's timestamp, not ours: otherwise a day-long cycle
+                # reads as seconds on a service started after the work.
                 detected_at=epoch(issue.get("created_at")),
             )
             if created:
@@ -527,9 +502,9 @@ class Watcher:
                 "acus_consumed": self.devin.session_acus(str(session.get("session_id") or "")),
             }
             session_id = session.get("session_id")
-            # Every session gets a row of its own. A remediation only names its
-            # issue once it reports, and until then the task table cannot show
-            # it at all — which is exactly the hour someone is watching.
+            # Every session gets a row. A remediation does not name its issue
+            # until it reports, so until then the task table cannot show it —
+            # which is exactly the hour someone is watching.
             views.append(session_view(session))
             number = issue_number_for(session)
             if number is None:
@@ -540,9 +515,8 @@ class Watcher:
             update = task_update_from_session(session)
             seen = self.store.session_ids_for(number)
             if session_id and session_id not in seen:
-                # A second session on the same issue is rework. Counting
-                # distinct session ids, rather than observations, is what keeps
-                # attempts-per-issue from climbing on every poll.
+                # A second session on the same issue is rework. Counted by
+                # distinct id so it does not climb on every poll.
                 update["attempts"] = len(seen) + 1
                 if seen:
                     self.store.log(
@@ -567,8 +541,7 @@ class Watcher:
             stage = stage_for_session(session, facts.state)
             if facts.state:
                 self.store.upsert_task(number, pr_state=facts.state)
-            # GitHub's timestamps, not this loop's clock, which only knows when
-            # it looked. Never overwritten once known.
+            # GitHub's timestamps, not this loop's clock. Never overwritten.
             if not (task or {}).get("pr_opened_at"):
                 self.store.upsert_task(number, pr_opened_at=facts.opened_at)
             if not (task or {}).get("settled_at"):
@@ -586,10 +559,9 @@ class Watcher:
     def sync_waiting(self) -> int:
         """The human's queue: open PRs the loop will not advance on its own.
 
-        Read from GitHub rather than inferred from the funnel, because a PR
-        merged or closed in the browser has to leave this list, and because a
-        class proposal belongs to a scan that will scroll off the session view
-        long before anyone gets to it.
+        Read from GitHub rather than inferred from the funnel, so that a PR
+        merged in the browser leaves the list, and so that a class proposal
+        outlives the scan session that opened it.
         """
         by_url = {t["pr_url"]: t for t in self.store.tasks() if t.get("pr_url")}
         items = []
@@ -606,13 +578,12 @@ class Watcher:
         return len(items)
 
     def note_review(self, number: int, task: dict[str, Any]) -> tuple[int, bool]:
-        """Times a human sent this PR back, and whether Devin has yet answered
-        the last one. Counted and not acted on.
+        """Times a human sent this PR back, and whether Devin has answered the
+        last one. Counted, never acted on.
 
-        Nothing here reruns the work: Devin's own comment monitoring answers
-        reviews on the PR its session opened, and a second trigger would only
-        race it. What the loop owes you is the number — how often a first
-        attempt was not good enough is the measure of whether it is working.
+        Devin's own comment monitoring answers reviews on the PR its session
+        opened, so a trigger here would only race it. The number is what the
+        loop owes you: how often a first attempt was not good enough.
         """
         count, reviewed_at = self.github.changes_requested(number)
         before = task.get("changes_requested") or 0
@@ -625,8 +596,8 @@ class Watcher:
             )
         if not count:
             return 0, False
-        # A commit or a reply — an answer saying the review needs no change is
-        # still an answer — hands the PR back to the human.
+        # A commit or a reply hands the PR back: an answer explaining why no
+        # change is needed is still an answer.
         reviewed = epoch(reviewed_at)
         answered = epoch(self.github.last_devin_activity_at(number))
         return count, reviewed is not None and (answered is None or answered < reviewed)
@@ -635,7 +606,7 @@ class Watcher:
         """A scan's two moments: it started, and here is what came of it."""
         session_id = str(session.get("session_id") or "")
         # By its own status a scan never ends: it reports, then sits in
-        # `waiting_for_user` forever. Having reported is what finished means.
+        # `waiting_for_user`. Having reported is what finished means.
         phase = "finished" if human_status(session) == "finished" else "started"
         seen = self._scans.get(session_id)
         if phase == seen or seen == "finished":
@@ -648,11 +619,11 @@ class Watcher:
         )
 
     def note_progress(self, number: int, session: dict[str, Any], stage: str) -> None:
-        """Say that a session is still working, or that it is waiting on a human.
+        """Say that a session is still working, or that it needs a human.
 
-        A remediation can run for the better part of an hour, and between
-        `dispatched` and its PR it produces no state change at all. Without
-        this, a working session and a dead one look the same from the terminal.
+        A remediation can run the better part of an hour with no state change
+        between `dispatched` and its PR, and from the terminal that looks the
+        same as a dead one.
         """
         session_id = str(session.get("session_id") or "")
         if is_blocked(session):
@@ -669,8 +640,7 @@ class Watcher:
             self._beats.pop(session_id, None)
             return
         now = time.time()
-        # The first sighting needs no heartbeat: `dispatched` just said all of
-        # this, on the same line.
+        # The first sighting needs no heartbeat: `dispatched` just said it.
         since = self._beats.setdefault(session_id, now)
         if now - since < HEARTBEAT_SECONDS:
             return
@@ -685,11 +655,8 @@ class Watcher:
         )
 
     def pr_facts(self, pr_url: str | None, known: str | None = None) -> PrFacts:
-        """What GitHub says about the PR: its state and its own timestamps.
-
-        Merged is terminal, so a merged PR is remembered rather than re-fetched
-        every cycle for the rest of its life.
-        """
+        """The PR's state and GitHub's own timestamps for it. Merged is
+        terminal, so a merged PR is remembered rather than re-fetched."""
         if known == "merged" or not pr_url:
             return PrFacts(known if known == "merged" else None, None, None)
         if repo_from_pr_url(pr_url) not in (None, self.config.repo):
@@ -715,7 +682,7 @@ class Watcher:
         """A human labelled the issue ``devin:rejected``: close the PR, delete
         the branch, close the issue.
 
-        Recorded as *rejected*, not *failed*: failure means the fix was bad,
+        Recorded as rejected, not failed: failure means the fix was bad,
         rejection means the work should never have been filed.
         """
         cleaned = 0

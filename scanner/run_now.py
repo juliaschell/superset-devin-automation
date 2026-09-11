@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """Fire a scan now, rather than waiting for the nightly schedule.
 
-The automations API has no run-now endpoint. Its manual entry point is an
+The automations API has no run-now endpoint, and its manual entry point is an
 inbound-webhook trigger whose secret is issued once in the UI and returned as
-``null`` by the API — which makes it impossible to set up programmatically. So
-the scan also triggers on an issue labelled ``devin:scan``, and this opens one:
-a request, not work. The scan closes it on arrival and ignores its body.
+``null`` by the API, so it cannot be set up programmatically. Instead the scan
+also triggers on an issue labelled ``devin:scan``, and this opens one — a
+request, not work. The scan closes it on arrival and ignores its body.
 
 Labelling always succeeds, so it says nothing about whether Devin heard, and
 the two ways of not being heard need different fixes: the fork is not in
 Devin's GitHub access (a UI grant, no API), or the automation heard and skipped
-the run because its daily cap is spent. Neither is visible from GitHub, so this
-waits for the session it asked for and, failing that, says which one happened.
+the run with its daily cap spent. Neither is visible from GitHub, so this waits
+for the session it asked for and, failing that, says which one happened.
 
     REPO=you/superset GITHUB_TOKEN=... python -m scanner.run_now
 """
@@ -68,9 +68,8 @@ def scan_session_ids(devin: DevinClient) -> set[str]:
 def skipped_run(devin: DevinClient, since: float) -> dict[str, Any] | None:
     """The scan automation, if it declined to run since ``since``.
 
-    A skip is a rate limit, not a fault, and it is reported nowhere the
-    operator looks — the issue is labelled, the automation is enabled, and no
-    session exists.
+    A skip is a rate limit, not a fault, and it shows up nowhere the operator
+    looks: the issue is labelled, the automation is enabled, no session exists.
     """
     try:
         automations = devin.list_automations()
@@ -111,7 +110,7 @@ def main() -> int:
     )
     before: set[str] = set()
     if devin:
-        # Read before labelling: a session that starts in between is ours either
+        # Read before labelling: a session starting in between is ours either
         # way. An unreadable list means no baseline, so do not claim one.
         try:
             before = scan_session_ids(devin)

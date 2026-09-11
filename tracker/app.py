@@ -1,7 +1,7 @@
 """One FastAPI process: the watch loop, the dashboard, and its endpoints.
 
-The loop is an asyncio task rather than a second service because at a handful
-of findings a night, a second service has nothing to do but fail separately.
+The loop is an asyncio task rather than a second service: at a handful of
+findings a night, a second service has nothing to do but fail separately.
 """
 
 from __future__ import annotations
@@ -42,9 +42,9 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Superset remediation tracker")
     store = Store(config.db_path)
     watcher = build_watcher(store)
-    # After the configuration is validated, so an empty REPO never becomes the
-    # repo this database claims to be about. Identified by GitHub's id, so a
-    # fork deleted and remade under the same name starts from zero.
+    # After config is validated, so an empty REPO never becomes the repo this
+    # database claims to describe. By GitHub's id, so a fork remade under the
+    # same name starts from zero.
     repo_id, born = fork_identity(watcher.github)
     store.bind_repo(config.repo, repo_id, born)
     app.state.store = store
@@ -104,8 +104,8 @@ def create_app() -> FastAPI:
     def healthz() -> Any:
         age = current_metrics()["last_checked_seconds_ago"]
         stale = age is None or age > config.poll_interval_seconds * 4
-        # A dashboard that has stopped updating is worse than one that is down,
-        # because it still looks fine.
+        # A dashboard that stopped updating is worse than one that is down: it
+        # still looks fine.
         return JSONResponse(
             {"ok": not stale, "last_checked_seconds_ago": age, "repo": config.repo},
             status_code=200 if not stale else 503,

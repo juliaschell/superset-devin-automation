@@ -15,15 +15,24 @@ leave it.
 
 Ask once, together, and do not guess or substitute your own:
 
-| Variable | What it is |
-|---|---|
-| `REPO` | the Superset fork to work on, as `owner/name`. It need not exist yet |
-| `DEVIN_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
-| `DEVIN_ORG` | their org id |
-| `GITHUB_TOKEN` | a classic token with the `repo` scope, and only that one |
+| Variable | Export as | What it is |
+|---|---|---|
+| `REPO` | `REPO` | the Superset fork to work on, as `owner/name`. It need not exist yet |
+| `DEVIN_KEY` | `DEVIN_API_KEY` | a **service-user** key with the Admin role — `/v3/organizations/*` rejects a personal key |
+| `DEVIN_ORG` | `DEVIN_ORG_ID` | their org id |
+| `GITHUB_TOKEN` | `GITHUB_TOKEN` | a classic token with the `repo` scope, and only that one |
 
-There is no file to create and no `.env` to leave lying around. Never print them
-and never commit them.
+The two names are the same value: the left one on the command line, the right
+one in the environment. There is no file to create and no `.env` to leave lying
+around. Never print them and never commit them.
+
+## Before you start
+
+Clone this repo and run everything from its root. The host needs Docker with
+the compose plugin, and GNU make; nothing else is installed locally. `make up`
+stays attached and that stream is the log, so give it a terminal of its own and
+run anything else in a second one. `make down` stops it and the SQLite volume
+survives.
 
 ## Running it
 
@@ -36,11 +45,13 @@ That serves http://superset.localhost — any `*.localhost` name resolves to
 127.0.0.1 in a browser, so there is no hosts file to edit. If something already
 holds port 80, `make up DASHBOARD_PORT=8000 ...` moves it to
 http://superset.localhost:8000. Anything exported already is used as it is, so
-pass only what the environment is missing — `export`ing all four (under
-`DEVIN_API_KEY` and `DEVIN_ORG_ID`) keeps the secrets out of shell history and
-`ps`, and on a shared machine that is the one to prefer.
+pass only what the environment is missing — exporting keeps the secrets out of
+shell history and `ps`, and on a shared machine that is the one to prefer.
 `make scan` goes through the running container, so it needs nothing installed
-and no values re-passed.
+and no values re-passed. It opens a `devin:scan` issue on the fork as the
+trigger, waits up to 90s for the session and prints its URL; the scan closes
+that issue itself, so a new issue appearing there is the mechanism and not a
+finding.
 
 `make up` runs `python -m bootstrap` first, which forks Superset if
 `REPO` is missing, enables Issues, creates the labels, seeds the classification
@@ -52,9 +63,10 @@ One thing you cannot do for them: adding the fork to Devin's GitHub access
 (https://app.devin.ai/settings/integrations/github → Configure / Manage
 repositories) is a UI grant with no API, and it is per repository — a fork they
 replace has to be added again. Until it is done, label and review events never
-reach the automations and the loop looks silently idle. Tell them, and check it
-first if nothing fires: `make scan` fails with these instructions when the
-session it triggered never starts.
+reach the automations and the loop looks silently idle. You can tell whether it
+is already granted without asking: `make scan` prints `✓ scanning: <session
+url>` when the trigger reached the automation, and fails with these
+instructions when it did not. Run it before interrupting anyone.
 
 The other reason nothing starts is a cap, not a fault: each automation limits
 its own runs (`limits.invocations` in `scanner/automation.json` and
@@ -63,11 +75,24 @@ its own runs (`limits.invocations` in `scanner/automation.json` and
 no session exists. `make scan` distinguishes the two and names the cap. Raise
 the number there and re-run `make up` to apply it.
 
+The third reason is the steady state rather than a fault. A scan files nothing
+when every active class is already at its `max_open`, and proposes nothing when
+the class it would propose is already on an open proposal PR or sits in
+`_declined/`. That prints `scan_finished N skipped`, which looks like the
+failure above and is not one — the per-item reasons are in the scan session's
+output and on the dashboard. Raise `max_open` in the class file, or decide the
+open proposal, to give the next scan more to do.
+
 ## What to expect, in order
+
+On a fork with no prior runs. A fork that has been scanned before starts
+wherever it left off, so expect to arrive partway down this list, and a scan
+that finds everything already filed is a normal outcome rather than a stall.
 
 1. The first scan finds no active classifications, so it files **no issues** and
    instead opens a PR proposing classes. That is correct behaviour, not a
-   failure. The human merges it to switch detection on.
+   failure. **The loop stops here** until the human merges it to switch
+   detection on; nothing you can do as the operator advances it.
 2. The next scan files issues for the adopted classes and labels them
    `devin:ready`, which triggers the remediation automation.
 3. Each remediation session opens a PR that has passed its class's validation
@@ -78,7 +103,9 @@ the number there and re-run `make up` to apply it.
 4. The dashboard at `http://superset.localhost` opens with what is waiting on the
    human — every open PR, what it is, and the decision it needs — then the
    funnel; `/report.md` is the same thing written out, and `/healthz` fails if
-   the watch loop stalls.
+   the watch loop stalls. It is plain HTTP on `DASHBOARD_PORT` and ignores the
+   `Host` header, so from another machine forward the port or `curl` it — the
+   `*.localhost` name is a convenience for a browser on the same host.
 
 Metrics are per fork: the SQLite volume records which `REPO` it describes and
 empties itself when that changes, and sessions carry a `repo:` tag so one
@@ -105,6 +132,8 @@ commits to the same branch. Merging it stays theirs.
 - The classification registry lives in the **fork**, not here, and belongs to
   the human. Propose via PR; never move a file out of `_declined/`.
 - `make check` runs ruff, mypy and the tests. Keep it green.
+- `make down` stops the tracker, `make logs` follows it, and `make clean` drops
+  the SQLite volume with the fork's recorded history in it.
 
 ## Writing a classification, if you are asked to
 

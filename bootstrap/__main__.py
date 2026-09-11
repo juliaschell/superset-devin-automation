@@ -7,8 +7,8 @@
 4. create or update the playbook and both automations, scoped to this fork;
 5. optionally fire the first scan.
 
-Idempotent throughout, so a second run against a configured fork just prints
-what it found — which is what lets compose run it on every start.
+Idempotent throughout: a second run against a configured fork only prints what
+it found, which is what lets compose run it on every start.
 
     REPO=you/superset python -m bootstrap --scan
 
@@ -49,7 +49,7 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
         except GitHubError as exc:
             return [f"cannot fork {upstream} to {repo}: {exc}"]
 
-        # An account may hold one fork of an upstream, whatever it is called;
+        # An account holds one fork of an upstream whatever it is called, and
         # a second request quietly hands back the first, under its own name.
         landed = created.get("full_name") if isinstance(created, dict) else None
         if landed and landed != repo:
@@ -61,7 +61,7 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
                 f"delete {landed} first"
             ]
         # GitHub forks asynchronously and says nothing while it works, so say
-        # it here: silence for minutes is indistinguishable from a hang.
+        # it here: minutes of silence otherwise looks like a hang.
         for attempt in range(1, 31):
             time.sleep(4)
             try:
@@ -74,9 +74,9 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
             return [f"{repo} did not appear after two minutes; re-run once GitHub finishes"]
         print(f"+ {repo} exists")
 
-    # Write access is proved by attempting a write, never by reading
-    # `permissions`: an App installation token reports every permission false
-    # there while happily creating labels and issues.
+    # Write access is proved by writing, never by reading `permissions`: an
+    # App installation token reports every permission false there while
+    # happily creating labels and issues.
     if info.get("has_issues"):
         return []
     try:
@@ -93,7 +93,7 @@ def prepare_fork(github: GitHubClient, repo: str, upstream: str) -> list[str]:
 def dashboard_url() -> str:
     """Where the dashboard is, given the port it was published on.
 
-    A `*.localhost` name resolves to 127.0.0.1 in every browser without a hosts
+    Any `*.localhost` name resolves to 127.0.0.1 in a browser without a hosts
     file, so the default has no port to remember.
     """
     port = os.environ.get("DASHBOARD_PORT", "80")
@@ -101,10 +101,8 @@ def dashboard_url() -> str:
 
 
 def banner(repo: str) -> str:
-    """The one step with no API: granting Devin access to the fork.
-
-    Missed, every trigger silently does nothing, so it is worth the box.
-    """
+    """The one step with no API: granting Devin access to the fork. Missed,
+    every trigger silently does nothing — hence the box."""
     lines = [
         "ONE MANUAL STEP LEFT (skip it if you have already done it)",
         "",
@@ -126,8 +124,8 @@ def banner(repo: str) -> str:
 
 
 def seed_registry(github: GitHubClient) -> None:
-    """The registry's format spec and nothing else: what counts as a defect in
-    this repo is the human's call, and the first scan proposes candidates."""
+    """The registry's format spec and nothing else. What counts as a defect
+    here is the human's call; the first scan proposes candidates."""
     if github.file_exists(f"{REGISTRY}/README.md"):
         print(f"= {REGISTRY}/README.md already present")
         return
@@ -178,8 +176,8 @@ def main() -> int:
 
     code = run_now.main() if args.scan else 0
 
-    # Last, and framed, because it is the one step no API can do and the
-    # server's own logs start scrolling underneath it a second later.
+    # Last, and framed: no API can do this step, and the server's own logs
+    # start scrolling underneath it a second later.
     print(banner(args.repo))
     return code
 

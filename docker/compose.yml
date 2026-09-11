@@ -4,22 +4,19 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     # Bootstrap is idempotent, so every start brings the fork's labels,
-    # registry and automations back in line with what is checked in here,
-    # then serves the dashboard.
-    # --no-access-log so the loop's own lines are the output: the health check
-    # alone logs a request every 30s, which is the whole terminal on a quiet
-    # night.
+    # registry and automations back in line with what is checked in here.
+    # --no-access-log leaves the loop's own lines as the output: the health
+    # check alone would log a request every 30s.
     command: >
       sh -c "python -m bootstrap &&
              uvicorn tracker.app:app --host 0.0.0.0 --port 8000 --no-access-log"
     # On :80 so the dashboard is http://superset.localhost with no port to
-    # remember — browsers resolve any *.localhost name to 127.0.0.1 without a
-    # hosts file entry. Set DASHBOARD_PORT if something already has :80.
+    # remember; browsers resolve any *.localhost name to 127.0.0.1. Set
+    # DASHBOARD_PORT if something already holds :80.
     ports:
       - "${DASHBOARD_PORT:-80}:8000"
-    # Passed through from the shell rather than read from a file: there is no
-    # .env to copy, fill in and forget to gitignore, and a variable missing
-    # here fails on bootstrap's own message naming it.
+    # From the shell, not a file: there is no .env to copy, fill in and forget
+    # to gitignore, and a missing one fails with bootstrap naming it.
     environment:
       - REPO
       - DEVIN_API_KEY

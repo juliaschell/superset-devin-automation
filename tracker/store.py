@@ -1,11 +1,9 @@
 """One SQLite file, two tables, stdlib ``sqlite3``.
 
-``task_events`` is the append-only history: transitions, our own decisions, and
-the timings every metric is derived from. It exists nowhere else.
-
-``tasks`` is a cache of the latest state, all of it re-derivable from Devin and
-GitHub. It saves the dashboard two API fan-outs per render, and holds the few
-fields those APIs have no concept of: rejection, cleanup, attempt chains.
+``task_events`` is the append-only history every metric is derived from, and
+exists nowhere else. ``tasks`` caches the latest state — re-derivable from
+Devin and GitHub, but it saves the dashboard two API fan-outs per render and
+holds what those APIs have no concept of: rejection, cleanup, attempt chains.
 """
 
 from __future__ import annotations
@@ -16,8 +14,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-# The funnel, in order. Counts are "ever reached" rather than current state,
-# which would render a finished run as zeroes with everything in the last column.
+# The funnel, in order. Counts are "ever reached", not current state, which
+# would show a finished run as zeroes with everything in the last column.
 STAGES = ["detected", "dispatched", "running", "pr_open", "verified", "merged"]
 
 SCHEMA = """
@@ -85,8 +83,7 @@ class Store:
 
     def _add_missing_columns(self) -> None:
         """`CREATE TABLE IF NOT EXISTS` leaves an existing file on its old
-        shape, so a column added later is added here rather than by rebuilding
-        the database."""
+        shape, so columns added later are added here instead."""
         have = {row["name"] for row in self.conn.execute("PRAGMA table_info(tasks)")}
         for name, decl in (
             ("acus", "REAL"),
@@ -100,13 +97,11 @@ class Store:
     ) -> bool:
         """Point this database at ``repo``, emptying it if it held another.
 
-        The database outlives the container it runs in, so pointing the same
-        volume at a fresh fork would otherwise measure a funnel of issue
-        numbers that no longer exist. The name cannot decide that on its own:
-        deleting a fork and forking again under the same name gives a
-        different repository whose issues and PRs start from 1, so GitHub's
-        id is what a repository is. ``born`` is when that repository was
-        created, which also dates the sessions that can be about it.
+        The volume outlives the container, so a fresh fork would otherwise
+        inherit a funnel of issue numbers that no longer exist. The name alone
+        cannot tell: a fork deleted and remade under the same name is a
+        different repository, numbering from 1, so GitHub's id is the identity.
+        ``born`` is when that repository was created.
 
         Returns True if anything was discarded.
         """
@@ -134,10 +129,8 @@ class Store:
     def forget_before(self, born: float) -> int:
         """Drop what predates the repository it claims to describe.
 
-        The backstop for a database that recorded a fork of the same name
-        before ids were written down: nothing observed before this repository
-        existed can be about it, and those issue and PR numbers now resolve
-        to nothing.
+        The backstop for a database written before ids were recorded: nothing
+        observed before this repository existed can be about it.
         """
         cursor = self.conn.execute(
             "DELETE FROM tasks WHERE detected_at IS NOT NULL AND detected_at < ?", (born,)
@@ -180,9 +173,9 @@ class Store:
             ),
         )
         self.conn.commit()
-        # Also to the terminal `make up` is already holding: an event is a
-        # state change, so this narrates the run without anyone opening the
-        # dashboard, and stays quiet on the cycles where nothing happened.
+        # Also to the terminal `make up` is holding: one line per state change
+        # follows a run without opening the dashboard, and a quiet cycle
+        # prints nothing.
         where = f" #{issue_number}" if issue_number else ""
         print(f"{time.strftime('%H:%M:%S')} {kind}{where} {detail or ''}".rstrip(), flush=True)
 
@@ -198,15 +191,14 @@ class Store:
         """Insert or update a task. Returns True if this created a new row.
 
         Devin and GitHub are authoritative, so this overwrites rather than
-        merges. ``None`` is ignored, so a partial observation never blanks a
-        field already known.
+        merges. ``None`` is ignored: a partial observation never blanks a field
+        already known.
         """
         fields = {k: v for k, v in fields.items() if v is not None}
         now = time.time()
         existing = self.get_task(issue_number)
         if existing is None:
-            # Only fall back to this clock when the caller does not know
-            # GitHub's timestamp for the issue.
+            # This clock only when the caller has no GitHub timestamp.
             defaults = {
                 k: now for k in ("detected_at", "updated_at") if k not in fields
             }
@@ -243,9 +235,9 @@ class Store:
     def session_ids_for(self, issue_number: int) -> set[str]:
         """Every session ever observed against this issue.
 
-        Attempts are counted from this set, because the API lists an issue's
-        sessions in no fixed order: comparing against the session on the row
-        would alternate and count a fresh attempt on every poll.
+        Attempts are counted from this set: the API lists an issue's sessions
+        in no fixed order, so comparing against the one on the row would
+        alternate and count a new attempt every poll.
         """
         rows = self.conn.execute(
             "SELECT DISTINCT session_id FROM task_events"
@@ -264,8 +256,8 @@ class Store:
             if STAGES.index(stage) < STAGES.index(task["stage"]):
                 return
         stamp: dict[str, Any] = {"stage": stage}
-        # Never restamped, and only used where GitHub gave us no timestamp of
-        # its own: this clock knows when we looked, not when the work happened.
+        # Never restamped, and only where GitHub gave no timestamp of its own:
+        # this clock knows when we looked, not when the work happened.
         column = {
             "dispatched": "dispatched_at",
             "pr_open": "pr_opened_at",
@@ -319,12 +311,11 @@ class Store:
         return row["value"] if row else None
 
     def set_sessions(self, sessions: list[dict[str, Any]]) -> None:
-        """What Devin is doing right now, as last seen.
+        """What Devin is doing, as last seen.
 
-        A scan belongs to no issue and a remediation does not name its issue
-        until it reports, so neither has a task row while it is working. Devin
-        remains the record either way, so the latest view is cached here rather
-        than modelled.
+        A scan belongs to no issue and a remediation names none until it
+        reports, so neither has a task row while it works. Devin is the record;
+        this is a cached view of it.
         """
         self.set_meta("sessions", json.dumps(sessions))
 
@@ -333,8 +324,8 @@ class Store:
         return json.loads(raw) if raw else []
 
     def set_waiting(self, items: list[dict[str, Any]]) -> None:
-        """The open PRs waiting on a human, as last seen on GitHub. Cached for
-        the same reason as sessions: GitHub is the record, this is the view."""
+        """The open PRs waiting on a human, as last seen. Cached for the same
+        reason as sessions: GitHub is the record, this is the view."""
         self.set_meta("waiting", json.dumps(items))
 
     def waiting(self) -> list[dict[str, Any]]:

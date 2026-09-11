@@ -1,7 +1,7 @@
 """Metrics, derived from the event log and the task cache.
 
-What counts as success is a judgement, so each definition says what it excludes
-as well as what it counts.
+What counts as success is a judgement, so each definition below says what it
+excludes as well as what it counts.
 """
 
 from __future__ import annotations
@@ -38,9 +38,9 @@ def compute(store: Store) -> dict[str, Any]:
     # rates rather than counted as a failure.
     settled = [t for t in tasks if t.get("outcome") or t.get("rejected")]
 
-    # Autonomy: a verified PR with no human pulled in. The denominator is
-    # everything that settled *or* needed a human — over successes alone it
-    # reads ~100% and means nothing.
+    # Autonomy: a verified PR with no human pulled in. Denominator is
+    # everything settled *or* needing a human; over successes alone it would
+    # read ~100% and mean nothing.
     needed_human = [
         t for t in tasks if t.get("failure_reason") in ("blocked_on_human", "timed_out")
     ]
@@ -85,9 +85,9 @@ def compute(store: Store) -> dict[str, Any]:
         bucket["success_rate"] = _rate(bucket["verified"], bucket["volume"])
         bucket["rejection_rate"] = _rate(bucket["rejected"], bucket["volume"])
 
-    # Reported only where the consumption API measured it (Enterprise only).
-    # Below that plan no task carries ACUs and the section disappears, rather
-    # than showing a zero that would read as free work.
+    # Only where the consumption API measured it (Enterprise only). Below that
+    # plan the section disappears rather than showing a zero, which would read
+    # as free work.
     run = round(sum(t.get("acus") or 0.0 for t in tasks), 2) or None
     cost = (
         {
@@ -111,8 +111,7 @@ def compute(store: Store) -> dict[str, Any]:
             "settled": len(settled),
         },
         "funnel": {stage: funnel.get(stage, 0) for stage in STAGES},
-        # A verified PR, not a finished session: ending on a red build is not
-        # a success.
+        # A verified PR, not a finished session: a red build is not a success.
         "success_rate": _rate(len(verified), len(settled)),
         "autonomy_rate": _rate(len(autonomous), len(autonomy_denominator)),
         "human_rejection_rate": _rate(len(rejected), len(settled)),
@@ -121,15 +120,14 @@ def compute(store: Store) -> dict[str, Any]:
         ),
         # Fixes graded by a command their class file did not specify.
         "validation_mismatches": len([t for t in tasks if _validation_mismatch(t)]),
-        # Over dispatched issues only: an issue nobody has worked yet did not
-        # take zero attempts.
+        # Over dispatched issues only: an unworked issue took no attempts, not
+        # zero attempts.
         "attempts_per_issue": round(sum(attempts) / len(attempts), 2)
         if attempts
         else 0,
         "reworked_issues": len([t for t in tasks if (t.get("attempts") or 0) > 1]),
-        # A PR a human read and sent back. Nothing in this system reacts to it
-        # — it is the honest measure of how often a first attempt is not good
-        # enough, over the PRs a human has had the chance to judge.
+        # A PR a human read and sent back. Nothing reacts to it; it is the
+        # measure of how often a first attempt was not good enough.
         "changes_requested_prs": len(sent_back),
         "prs_opened": len(with_pr),
         "changes_requested_rate": _rate(len(sent_back), len(with_pr)),
@@ -145,8 +143,8 @@ def compute(store: Store) -> dict[str, Any]:
 def _validation_mismatch(task: dict[str, Any]) -> bool:
     """Did the fix run a gate other than the one its class file specifies?
 
-    Filling in a placeholder (``grep ... <files>``) is the command being used as
-    intended. Anything else is a session grading its own homework.
+    Filling in a placeholder (``grep ... <files>``) is the command used as
+    intended; anything else is a session grading its own homework.
     """
     ran, registry = task.get("validate_command"), task.get("validate_registry")
     if not ran or not registry:
@@ -164,8 +162,8 @@ def _rate(numerator: int, denominator: int) -> float | None:
 
 
 def prometheus(metrics: dict[str, Any]) -> str:
-    """Prometheus text exposition. Flat by design — this is a handful of
-    findings a night, not a time series problem."""
+    """Prometheus text exposition. Flat by design: a handful of findings a
+    night is not a time-series problem."""
     lines: list[str] = []
 
     def emit(name: str, value: Any, labels: str = "", help_text: str = "") -> None:
@@ -212,8 +210,8 @@ def report_markdown(
     repo: str,
     waiting: list[dict[str, Any]] | None = None,
 ) -> str:
-    """The write-up, methodology first: the rates mean nothing without the
-    sample size they were taken over."""
+    """The dashboard written out, methodology first: the rates mean nothing
+    without the sample size behind them."""
     t = metrics["totals"]
     cost = metrics["cost"]
 

@@ -1,9 +1,7 @@
 """GitHub client: find queued work, clean up rejected work.
 
-Small on purpose. PR state is read from the Devin session object, which already
-reports it, rather than from here as well.
-
-There is no merge call in this file, and a test keeps it that way.
+Small on purpose — PR state comes from the Devin session object, which already
+reports it. There is no merge call here, and a test keeps it that way.
 """
 
 from __future__ import annotations
@@ -51,14 +49,14 @@ class GitHubClient:
     def fork(self, upstream: str) -> Any:
         """Fork into exactly `self.repo`.
 
-        Without `name` the fork keeps the upstream's name, and without
-        `organization` it lands under the token's own account — so asking for
-        `you/anything-else` silently produces `you/superset`, and the wait for
-        the requested name never ends.
+        Without `name` the fork keeps the upstream's, and without
+        `organization` it lands under the token's own account: asking for
+        `you/anything-else` then silently produces `you/superset` and the wait
+        never ends.
 
-        The reply names the repo that was actually forked, which is not always
-        the one asked for: an account holds one fork of an upstream whatever it
-        is called, and a second request returns the first.
+        The reply names the repo actually forked, which is not always the one
+        asked for — an account holds one fork of an upstream whatever it is
+        called, and a second request returns the first.
         """
         owner, _, name = self.repo.partition("/")
         payload: dict[str, Any] = {"name": name}
@@ -87,9 +85,8 @@ class GitHubClient:
         return True
 
     def put_file(self, path: str, content: str, message: str) -> Any:
-        """Commit a file to the default branch; the API refuses to overwrite
-        without a blob sha, and there is deliberately no update path. This
-        seeds the registry into a fresh fork; humans edit it after that.
+        """Commit a file to the default branch. Deliberately no update path:
+        this seeds the registry into a fresh fork, and humans own it after.
         """
         return self._request(
             "PUT",
@@ -139,9 +136,9 @@ class GitHubClient:
         )
 
     def changes_requested(self, number: int) -> tuple[int, str | None]:
-        """How many times a human sent this PR back, and when the last one was.
-        The measure of whether the first attempt was good enough — nothing
-        acts on it. The timestamp says whether an answer has landed since."""
+        """How many times a human sent this PR back, and when the last one
+        was. Nothing acts on it; the timestamp says whether an answer has
+        landed since."""
         reviews = self._request(
             "GET", f"/repos/{self.repo}/pulls/{number}/reviews", params={"per_page": 100}
         )
@@ -150,10 +147,8 @@ class GitHubClient:
         return len(sent_back), (str(last) if last else None)
 
     def last_devin_activity_at(self, number: int) -> str | None:
-        """When Devin last answered on this PR, by commit or by comment.
-
-        A reply explaining why the review needs no change is an answer as much
-        as a commit is, so both count."""
+        """When Devin last answered on this PR. A reply explaining why the
+        review needs no change counts as much as a commit does."""
         commits = self._request(
             "GET", f"/repos/{self.repo}/pulls/{number}/commits", params={"per_page": 100}
         )
@@ -195,8 +190,8 @@ def pr_number_from_url(url: str) -> int | None:
 def repo_from_pr_url(url: str) -> str | None:
     """``https://github.com/o/r/pull/42`` → ``o/r``.
 
-    A number alone is ambiguous across forks: PR 11 exists on every one of
-    them, and asking the wrong fork about it answers about someone else's work.
+    A number alone is ambiguous: PR 11 exists on every fork, and asking the
+    wrong one about it answers about someone else's work.
     """
     parts = [p for p in url.rstrip("/").split("/") if p]
     if len(parts) >= 4 and parts[-2] == "pull":

@@ -1,11 +1,11 @@
-"""Devin API client — v3 API.
+"""Devin API client, v3 only.
 
-``/v1/sessions`` is the personal surface and rejects a service key, so it is not
-a fallback. v3 is the better surface anyway: one call per cycle returns every
-tagged session with its pull requests attached.
+``/v1/sessions`` is the personal surface and rejects a service key, so it is
+not a fallback. v3 is the better surface anyway: one call per cycle returns
+every tagged session with its pull requests attached.
 
-Two of its fields do not behave as documented, and ``report`` and
-``session_acus`` are the workarounds — see each.
+``report`` and ``session_acus`` work around two fields that do not behave as
+documented — each says how.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ import httpx
 JSON_BLOCK = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
 
 # A session's first message is the trigger payload, itself fenced JSON, so
-# "newest JSON block" alone would file a GitHub webhook as a session's report.
-# These keys are what distinguish the two output schemas from anything else.
+# "newest JSON block" alone would read a GitHub webhook as the report. These
+# keys are what mark out the two output schemas.
 REPORT_KEYS = frozenset({"outcome", "issues_filed", "classes_proposed"})
 
 
@@ -38,9 +38,9 @@ class DevinClient:
         )
 
     def _request(self, method: str, path: str, **kwargs: Any) -> Any:
-        # Retried once: the read timeouts seen here are transient. A second
-        # failure is a DevinError like any other, which callers treat as "we
-        # know less this cycle" rather than aborting the pass.
+        # Retried once, because the read timeouts seen here are transient. A
+        # second failure is a DevinError, which callers treat as "we know less
+        # this cycle" rather than as a reason to abort the pass.
         for attempt in (1, 2):
             try:
                 response = self._client.request(method, f"{self.base_url}{path}", **kwargs)
@@ -55,8 +55,8 @@ class DevinClient:
     # -------------------------------------------------------------- sessions
 
     def list_sessions(self, tags: list[str] | None = None, limit: int = 100) -> list[dict[str, Any]]:
-        """Every session carrying our tag — one request per cycle, not one per
-        task, which is why the automations tag what they spawn."""
+        """Every session carrying our tag: one request per cycle rather than
+        one per task, which is why the automations tag what they spawn."""
         params: dict[str, Any] = {"limit": limit}
         if tags:
             params["tags"] = ",".join(tags)
@@ -73,14 +73,13 @@ class DevinClient:
     def report(self, session: dict[str, Any]) -> dict[str, Any]:
         """What the session said it did, from wherever it managed to say it.
 
-        ``structured_output`` is only populated when a schema was attached at
+        ``structured_output`` is populated only when a schema was attached at
         creation, and the API rejects a schema on an automation-spawned
-        session — so it is null for every session here and the prompt asks for
-        the same JSON in the final message instead.
+        session. So it is always null here, and the prompt asks for the same
+        JSON in the final message instead.
 
-        Returns ``{}`` rather than raising when nothing parses: a session that
-        answered in prose, or has not answered yet, is one we know less about,
-        not a broken cycle.
+        ``{}`` rather than an error when nothing parses: a session that
+        answered in prose, or has not answered yet, is one we know less about.
         """
         out = session.get("structured_output")
         if isinstance(out, dict) and out:
@@ -109,11 +108,11 @@ class DevinClient:
         """What the session cost, from the billing surface.
 
         ``acus_consumed`` on the session object reads ``0.0`` even for sessions
-        that plainly did work, so the figure comes from the consumption API —
-        the data behind the usage dashboard.
+        that plainly did work, so the figure comes from the consumption API
+        instead — the data behind the usage dashboard.
 
-        No consumption rows returns ``None``, not ``0.0``: unknown is not free.
-        Below the Enterprise plan the endpoint answers with an empty series, so
+        ``None`` rather than ``0.0`` when there are no rows: unknown is not
+        free. Below Enterprise the endpoint returns an empty series, so
         ``None`` is the usual answer on a self-serve account.
         """
         ident = session_id if session_id.startswith("devin-") else f"devin-{session_id}"
@@ -138,9 +137,9 @@ class DevinClient:
         return data.get("items", []) if isinstance(data, dict) else []
 
     def automation_schemas(self) -> dict[str, Any]:
-        """The platform's trigger catalogue: event types, filterable fields, and
+        """The platform's trigger catalogue: event types, filterable fields and
         supported actions. There is no dry-run endpoint, so ``--check``
-        validates a definition against this rather than against assumptions."""
+        validates a definition against this."""
         data = self._request("GET", self._org_path("automations/schemas"))
         return data if isinstance(data, dict) else {}
 

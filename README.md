@@ -1,141 +1,142 @@
 # Superset remediation
 
-A nightly automation that finds problem classes in a fork of
-[Apache Superset](https://github.com/apache/superset), files real bugs as GitHub issues, fixes them, proves the fix with a human-approved validation command, and opens a PR with the proposed fix.
+A nightly loop over a fork of [Apache Superset](https://github.com/apache/superset):
+Devin finds classes of defect, files them as GitHub issues, fixes them, proves
+each fix with a validation command a human approved, and opens a PR.
 
-The system includes a Devin automation to scan for problems and a separate automation to remediate them. A small service alongside them polls Devin and GitHub and records data and metrics in an SQLite file.
+One Devin automation scans, a second remediates, and a small service alongside
+them polls Devin and GitHub and records every transition in a SQLite file.
 
 **No pull request is ever merged automatically.**
 
 ---
 
-## How to run
+## Run it
 
-***NOTE:*** If you would like your own Devin to manage this process, point it at [`AGENTS.md`](AGENTS.md) and it can guide you through. If you want to run it yourself, follow the steps below. 
+If you would rather have your own Devin drive this, point it at
+[`AGENTS.md`](AGENTS.md); it is the whole procedure. To run it yourself:
 
-1. Retrieve authentication tokens: 
+### 1. Get the two credentials
 
-- a **service-user** API key with the Admin role —
-  https://app.devin.ai/settings/org-service-users 
-- a personal access token (classic) with the `repo` scope, and only that one —
-  https://github.com/settings/tokens/new?scopes=repo opens the form with the
-  box already ticked
+- a Devin **service-user** key with the Admin role —
+  https://app.devin.ai/settings/org-service-users
+- a GitHub personal access token (classic) with the `repo` scope and nothing
+  else — https://github.com/settings/tokens/new?scopes=repo opens the form with
+  that box already ticked
 
-2. Stand up the container:
+### 2. Start the container
 
 ```bash
-$ make up REPO=<username/fork_name> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TOKEN=<token>
+make up REPO=<you/fork> DEVIN_KEY=<key> DEVIN_ORG=<org_id> GITHUB_TOKEN=<token>
 ```
 
-- `REPO` — the fork to work on, created for you if it does not exist yet. GitHub
-  allows one fork of a repo per account, so if you already fork Superset, give
-  that name here
-- `DEVIN_KEY` — a Devin **service-user** key, Admin role
+- `REPO` — the fork to work on, created for you if it does not exist. GitHub
+  allows one fork of a repo per account, so if you already fork Superset, name
+  that one
+- `DEVIN_KEY` — the service-user key
 - `DEVIN_ORG` — your Devin org id, `org-…`
-- `GITHUB_TOKEN` — the `repo` scope. Nothing here ever merges
+- `GITHUB_TOKEN` — the `repo`-scoped token
 
-Anything already exported is used as it is, so `make up` on its own is enough
-when `REPO`, `DEVIN_API_KEY`, `DEVIN_ORG_ID` and `GITHUB_TOKEN` are in the
-environment — and only what is still missing has to be passed. Prefer that: a
-command line lands in shell history and in `ps`.
+Anything already exported is used as it is, so pass only what the environment
+is missing — `make up` alone is enough when `REPO`, `DEVIN_API_KEY`,
+`DEVIN_ORG_ID` and `GITHUB_TOKEN` are all exported. Prefer that: a command line
+lands in shell history and in `ps`.
 
-The container will boot-strap as needed (create the fork, modify git settings, seed the classification registry, and create the playbook and automations for the fork)
+The container bootstraps before it serves: it forks Superset if needed, enables
+Issues, creates the labels, seeds the classification registry, and creates the
+playbook and both automations against your fork. It is idempotent, so this is
+also how you apply a change to a prompt or an automation.
 
-3. Configure Devin's GitHub access: 
+### 3. Give Devin access to the fork
 
-Bootstrap finishes by printing this as a boxed reminder, because it is the one
-step with no API: at https://app.devin.ai/settings/integrations/github, choose
-Configure / Manage repositories and add your fork. Until you do, Devin cannot
-read the code and label events reach no automation, so the loop looks idle. The
-dashboard repeats the reminder until the first session starts, and `make scan`
-prints it again if nothing answers. Access is granted per repository, so a fork
-you replace has to be added again.
+The one step with no API, so bootstrap ends by printing it in a box: at
+https://app.devin.ai/settings/integrations/github choose Configure / Manage
+repositories and add your fork. Until you do, Devin cannot read the code and
+label events reach no automation, so the loop looks idle. Access is per
+repository — a fork you replace has to be added again.
 
-4. Start the scanner by hand: 
+### 4. Run the first scan
 
-In a second terminal, since `make up` holds the first one:
-
-```bash
-$ make scan
-```
-
-If not manually kicked, it would run automatically at 2:00PT
-
-`make scan` only files the issue whose label is the trigger, so the scan itself
-starts on Devin's side: it waits for that session, prints a link to it, and if
-none starts says why — either Devin has no access to the fork, or the scan
-automation is over its 12-runs-a-day cap and skipped this one. From there the
-`make up` terminal narrates it — a line when the scan starts, and one when it
-ends saying what it filed or proposed — so nothing needs the Devin session open.
-
-The scanner will create GitHub issues which will trigger the remediation automation to post fix PRs
-
-A metrics dashboard will be available at http://superset.localhost — browsers
-resolve any `*.localhost` name to 127.0.0.1, so nothing needs adding to
-`/etc/hosts`. If port 80 is already taken, pass `DASHBOARD_PORT=8000` to
-`make up` and the dashboard moves to http://superset.localhost:8000
-
-It reloads itself every 15 seconds and the loop behind it polls GitHub and Devin
-just as often, so a change shows within about half a minute.
-`POLL_INTERVAL_SECONDS` moves the polling; raise it on a fork busy enough to
-feel the GitHub rate limit.
-
-5. Merge 1+ classifications
-
-The first scan will find the classification directory empty, so it will not file bugs. It will propose some new classifications in your fork repo. These PRs must be reviewed, modified as desired, and merged. There must be at least 1 active classification for the scanner to be able to file new bugs. 
-
-6. Continue the scanning loop 
+The scan runs at 02:00 PT on its own. To run one now, in a second terminal
+(`make up` holds the first):
 
 ```bash
-$ make scan
+make scan
 ```
-Each following scan will file bugs according to the existing classifications, and may propose new classification PRs to review. 
+
+That opens an issue whose label is the trigger, so the scan starts on Devin's
+side. `make scan` waits for that session and prints a link to it; if none
+starts it says which of the two reasons applies — Devin has no access to the
+fork, or the scan automation is over its 12-runs-a-day cap. From there the
+`make up` terminal narrates the run, a line per state change, so nothing needs
+the Devin session open.
+
+### 5. Adopt at least one classification
+
+The first scan finds the registry empty, so it files no issues and instead
+opens a PR proposing classes. Review it, edit it if you want, and merge: the
+scanner files nothing until at least one class is active.
+
+### 6. Scan again
+
+```bash
+make scan
+```
+
+Every scan from here files issues for the active classes, and each issue
+triggers a remediation session that opens a PR for you to review. New classes
+may still be proposed alongside them.
+
+The dashboard is at http://superset.localhost — browsers resolve any
+`*.localhost` name to 127.0.0.1, so there is no `/etc/hosts` entry to add. If
+port 80 is taken, `make up DASHBOARD_PORT=8000 ...` moves it to
+http://superset.localhost:8000. The page reloads every 15 seconds and the loop
+behind it polls just as often, so a change shows within about half a minute;
+raise `POLL_INTERVAL_SECONDS` on a fork busy enough to feel GitHub's rate
+limit.
+
+**Without Docker**: `make install`, then `make bootstrap` and `make run` with
+the same four values.
 
 ---
 
-***Run without Docker***: `make install`, then `make bootstrap` and `make run` with the
-same four values. Every Make target says who it is for in the comment above it.
-
----
-
-## How to see measurements
+## What it measures
 
 | Path | |
 |---|---|
-| `/` | dashboard: what is waiting on you, funnel, rates, per-class table, live task list |
+| `/` | dashboard: what is waiting on you, funnel, rates, per-class table, task list |
 | `/report.md` | the same numbers as a write-up, sample size first |
 | `/metrics` | Prometheus |
 | `/metrics.json` | the same numbers as JSON |
 | `/healthz` | 503 if the watch loop has gone stale |
 
-The numbers are always about one fork: state lives in a docker volume that
-outlives the container, so starting `make up` with a different `REPO` clears it
-and a fresh fork begins at zero.
+The numbers are always about one fork. State lives in a Docker volume that
+outlives the container, so `make up` with a different `REPO` clears it and the
+new fork starts at zero.
 
 Definitions are choices, so they are stated rather than implied:
 
 - **Success** = a PR whose classification's validation command *passed*. A
   session that finished on a red build is not a success.
-- **Autonomy** is measured over everything that settled *or* needed a human. Over
-  successes alone it reads ~100%: the blocked session, the clearest possible loss
-  of autonomy, would not be in the denominator.
+- **Autonomy** is measured over everything that settled *or* needed a human.
+  Over successes alone it reads ~100%: a blocked session, the clearest possible
+  loss of autonomy, would not be in the denominator.
 - **Sent back** = a PR a human reviewed with *request changes*, over the PRs
-  opened. Nothing in this system reacts to it — the PR's own session answers the
-  review — so it is a clean read on how often a first attempt is not good enough.
-- **Rejection is not failure.** Rejection judges the scanner — we fixed something
-  nobody wanted. Failure judges the fixer.
-- **The funnel is cumulative** ("ever reached"), not current state, which renders
-  a finished run as a row of zeroes.
+  opened. Nothing here reacts to it — the PR's own session answers the review —
+  so it is a clean read on how often a first attempt is not good enough.
+- **Rejection is not failure.** Rejection judges the scanner: it filed
+  something nobody wanted. Failure judges the fixer.
+- **The funnel is cumulative** ("ever reached"), not current state, which would
+  show a finished run as a row of zeroes.
 - **Merged** counts human decisions only. Nothing here can merge.
-- **Rates are `null`, not `0`, when there is no data.** Zero reads as a measured
-  failure.
+- **Rates are `null`, not `0`, when there is no data.** A zero reads as a
+  measured failure.
 - **Durations come from GitHub's timestamps**, not this process's clock, so a
   tracker started after the work reports the real elapsed time rather than the
   gap between its own first two observations.
-- **Cost is measured or absent, never typed in.** Per-session spend is fetched
-  from the consumption API, which is Enterprise-only; below that plan it returns
-  no rows, and unmeasured cost is not reported at all — no ACU rows, no Cost
-  section, no ACU series.
+- **Cost is measured or absent, never typed in.** Per-session spend comes from
+  the consumption API, which is Enterprise-only; below that plan it returns no
+  rows and no cost is reported at all.
 
 ---
 
@@ -154,9 +155,9 @@ Definitions are choices, so they are stated rather than implied:
               │       │                                 human: review
               │       │                                       │
               │       ┘───────────────────────────────────────┘
-              │                                               │  
-              │ finding fits an active class                  │        
-              ▼                                               │ 
+              │                                               │
+              │ finding fits an active class                  │
+              ▼                                               │
      ★ GitHub issue,                                          │
        labelled devin:ready                                   │
               │                                               │
@@ -164,16 +165,16 @@ Definitions are choices, so they are stated rather than implied:
      ┌──────────────────┐                                     │
      │ remediate session│                                     │
      │      (Devin)     │◀────────────────────────────────────┘
-     └────────┬─────────┘                                    
-              ▼                                              
-     ★ Remediation PR                                        
-              │                                              
-      ┌───────┴─────────────┬──────────────────────┐         
-      ▼                     ▼                      ▼         
-  human: merge     human: comment        human: label issue  
-                  → the PR's own         devin:rejected      
-                    session revises it   → PR, branch and    
-                    (counted as rework)    issue closed      
+     └────────┬─────────┘
+              ▼
+     ★ Remediation PR
+              │
+      ┌───────┴─────────────┬──────────────────────┐
+      ▼                     ▼                      ▼
+  human: merge     human: comment        human: label issue
+                  → the PR's own         devin:rejected
+                    session revises it   → PR, branch and
+                    (counted as rework)    issue closed
 
 
   Throughout: the tracker polls Devin and GitHub, records every transition,
@@ -182,51 +183,20 @@ Definitions are choices, so they are stated rather than implied:
 
 ---
 
-## Managing it
-
-### Reviewing classification proposals
-
-The scan opens a PR adding `<slug>.md` when it finds a potential bug without an existing classification.
-Proposals are written to be merged unchanged (state, settings, validation command), but you can modify them as needed in that PR or any later PR. 
-
-| You think… | You do… |
-|---|---|
-| yes | merge the PR — detection starts on the next scan |
-| yes, but not yet | change `status: active` to `muted`, then merge |
-| no | move the file to `_declined/`, set `status: declined`, add a `## Why declined` section, merge |
-
-Decline suggested classifications **by setting the status and moving to declined folder**, not by closing the PR or removing the file. The classification directory is ground truth. Closing is not a signal — the class will be proposed again next run. 
-
-Editing a proposal before merging is always available, and you need not do it
-by hand: the proposal PR is opened by a Devin session, so commenting on a file
-— *mute this one*, *decline this one, too noisy*, *drop this one* — is enough
-for Devin to push those edits to the same branch. Merging stays your click. If
-proposals routinely need rewriting, that is a bug in the scan prompt, not a
-step in the process.
-
-### Adding a classification by hand
-
-Commit a file to `.devin/classifications/` in the fork in the shape below.
-Nothing else is required — the next scan reads the directory. This is also how
-you change what a class means. If you have an agent write it, point it at
-[`AGENTS.md`](AGENTS.md), which carries the rules a `validate:` command has to
-satisfy.
-
----
-
 ## The classification registry
 
-Issue classes live as markdown in the fork, not in this repo:
+What counts as a defect is yours to decide, so the classes live as markdown in
+the **fork**, not in this repo:
 
 ```
 .devin/classifications/
-  README.md                            ← see for details on the lifecycle of a classification 
+  README.md                            ← the lifecycle, in the fork
   transitive-npm-advisory.md
   stale-python-lockfile.md
   _declined/test-describe-nesting.md   ← considered and rejected, with reasons
 ```
 
-### Structure of a classification file
+A class file:
 
 ```markdown
 ---
@@ -245,23 +215,48 @@ validate: cd superset-frontend && npm audit --audit-level=high
 ## Seed finding   the example that motivated the class, file and line
 ```
 
-`validate:` is the load-bearing field: every fix in the class is held to it, and
-the dashboard flags any run whose actual command differed, so a session cannot
-quietly grade its own homework. What makes a good one is in
+`validate:` is the load-bearing field: every fix in the class is held to it,
+and the dashboard flags any run whose actual command differed, so a session
+cannot quietly grade its own homework. What makes a good one is in
 [`AGENTS.md`](AGENTS.md).
+
+### Reviewing a proposal
+
+The scan opens a PR adding `<slug>.md` whenever it finds something no active
+class covers. Proposals are written to be merged unchanged.
+
+| You think… | You do… |
+|---|---|
+| yes | merge the PR — detection starts on the next scan |
+| yes, but not yet | change `status: active` to `muted`, then merge |
+| no | move the file to `_declined/`, set `status: declined`, add a `## Why declined` section, merge |
+
+Decline by recording the decline, not by closing the PR: the directory is the
+only record, and a closed PR means the same class comes back next scan.
+
+You need not edit a proposal by hand either. The PR belongs to a Devin session,
+so a comment — *mute this one*, *decline this one, too noisy*, *drop this one*
+— is enough for it to push the edits to the same branch. Merging stays your
+click. If proposals routinely need rewriting, that is a bug in the scan prompt.
+
+### Adding a class by hand
+
+Commit a file in the shape above to `.devin/classifications/` in the fork; the
+next scan reads the directory. This is also how you change what a class means.
+If you have an agent write it, point it at [`AGENTS.md`](AGENTS.md), which
+carries the rules a `validate:` command has to satisfy.
 
 ---
 
-### Reviewing Remediation pull requests
+## Reviewing a remediation PR
 
 | You want to… | You do… |
 |---|---|
-| accept the fix | merge it (with or without modifying by hand) |
-| ask Devin for changes | comment on the PR. The session that opened it answers with commits to the same branch — nothing here re-triggers, and the tracker counts the PR as sent back so the rate is visible |
-| reject the finding | label the *issue* `devin:rejected` — the loop closes the PR, deletes the branch, closes the issue, and counts it as rejected rather than failed |
+| accept the fix | merge it, edited by hand or not |
+| ask for changes | comment on the PR. The session that opened it answers with commits to the same branch — nothing here re-triggers — and the tracker counts the PR as sent back |
+| reject the finding | label the *issue* `devin:rejected`. The loop closes the PR, deletes the branch, closes the issue, and counts it as rejected rather than failed |
 | add work by hand | open an issue and label it `devin:ready` |
 | re-run a corrected issue | remove and re-apply the `devin:ready` label |
-
 
 ---
 
@@ -270,9 +265,9 @@ quietly grade its own homework. What makes a good one is in
 ```
 scanner/              finds problems, files issues, proposes new classes
 remediator/           fixes them, validates the fix, opens a PR
-tracker/              records persistent cross-session data, presents metrics 
+tracker/              polls both APIs, records state, serves the dashboard
 shared/               Devin and GitHub clients, config
-bootstrap/            one pass to set up the environment
-docker/               Dockerfile + compose.yml
-tests/                including one that asserts we cannot merge
+bootstrap/            one idempotent pass to set everything up
+docker/               Dockerfile and compose.yml
+tests/                including one asserting the code cannot merge a PR
 ```

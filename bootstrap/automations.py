@@ -3,8 +3,8 @@
 
 ``scanner/`` and ``remediator/`` each hold an ``automation.json``, the
 ``prompt.md`` it runs and the ``output_schema.json`` it is asked to return.
-Those files are the source of truth; this makes the org match them, keeping the
-prompts reviewable as prose rather than as JSON strings.
+Those files are the source of truth; this makes the org match them, which keeps
+the prompts reviewable as prose rather than as JSON strings.
 
     python -m bootstrap.automations --check   # validate only, creates nothing
     python -m bootstrap.automations           # create or update
@@ -45,15 +45,15 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
 
     prompt = prompt.replace("{{REPO}}", repo).replace("{{MAX_ISSUES_PER_RUN}}", str(max_issues))
     if title := files.get("playbook"):
-        # A session's playbook_id is read-only and derived from this token.
-        # Looked up by title so no platform id is checked in.
+        # A session's playbook_id is read-only and derived from this token,
+        # looked up by title so no platform id is checked in.
         prompt = f"@playbook:{playbook_ids[title]}\n\n{prompt}"
     if (schema_path := home / "output_schema.json").exists():
         # In the prompt because nothing else carries a schema to a spawned
         # session: the automations API has no field for one, and a playbook's
-        # `structured_output_schema` was measured not to reach the session.
-        # So the shape is requested, not enforced, and the watcher treats every
-        # field of it as optional.
+        # `structured_output_schema` was measured not to arrive. The shape is
+        # requested, not enforced, so the watcher treats every field as
+        # optional.
         schema = json.loads(schema_path.read_text())
         prompt += (
             "\n\n## Output schema\n\nReturn structured output matching exactly:\n\n```json\n"
@@ -63,8 +63,8 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
 
     body = json.dumps(spec)
     body = body.replace("{{REPO}}", repo)
-    # JSON has no comments and the API rejects unknown keys, so rationale lives
-    # under _-prefixed keys that are stripped on the way out.
+    # JSON has no comments and the API rejects unknown keys, so rationale
+    # lives under _-prefixed keys, stripped on the way out.
     spec = strip_docs(json.loads(body))
     for action in spec.get("actions", []):
         if action.get("type") == "start_session":
@@ -75,9 +75,9 @@ def render(role: str, repo: str, max_issues: int, playbook_ids: dict[str, str]) 
 def check_against_schemas(spec: dict[str, Any], schemas: dict[str, Any]) -> list[str]:
     """Validate a spec against the platform's trigger catalogue.
 
-    There is no dry-run endpoint, and these are the mistakes that fail silently:
-    a trigger naming an event type or condition field the platform does not
-    publish is accepted, never fires, and reports nothing.
+    There is no dry-run endpoint, and this is the mistake that fails silently:
+    a trigger naming an event type or field the platform does not publish is
+    accepted, never fires, and reports nothing.
     """
     catalogue: dict[str, dict[str, Any]] = {}
     for source in schemas.get("sources", {}).values():

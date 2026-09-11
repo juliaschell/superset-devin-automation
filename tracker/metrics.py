@@ -131,6 +131,7 @@ def compute(store: Store) -> dict[str, Any]:
         # — it is the honest measure of how often a first attempt is not good
         # enough, over the PRs a human has had the chance to judge.
         "changes_requested_prs": len(sent_back),
+        "prs_opened": len(with_pr),
         "changes_requested_rate": _rate(len(sent_back), len(with_pr)),
         "median_time_to_pr_seconds": _median(time_to_pr),
         "median_cycle_seconds": _median(cycle),
@@ -240,10 +241,10 @@ def report_markdown(
         f"| Human rejection rate | {pct(metrics['human_rejection_rate'])} |",
         f"| Verification pass rate | {pct(metrics['verification_pass_rate'])} |",
         f"| Validation-command mismatches | {metrics['validation_mismatches']} |",
+        f"| PRs a human sent back | {metrics['changes_requested_prs']}"
+        f" of {metrics['prs_opened']} ({pct(metrics['changes_requested_rate'])}) |",
         f"| Attempts per issue | {metrics['attempts_per_issue']} |",
         f"| Issues reworked at least once | {metrics['reworked_issues']} |",
-        f"| PRs a human sent back | {metrics['changes_requested_prs']}"
-        f" ({pct(metrics['changes_requested_rate'])}) |",
         f"| Median time to PR | {metrics['median_time_to_pr_seconds']}s |",
         f"| Merged by a human | {t['merged']} |",
         "",
